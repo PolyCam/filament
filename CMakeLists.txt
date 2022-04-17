@@ -17,7 +17,7 @@ option(FILAMENT_USE_SWIFTSHADER "Compile Filament against SwiftShader" OFF)
 
 option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
 
-option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
+option(FILAMENT_SKIP_SAMPLES "Don't build samples" ON)
 
 option(FILAMENT_SUPPORTS_XCB "Include XCB support in Linux builds" ON)
 
@@ -63,8 +63,12 @@ endif()
 # ==================================================================================================
 # Support for ccache
 # ==================================================================================================
+#[[
+
+TODO: see if we can get ccache working again
 find_program(CCACHE_PROGRAM ccache)
 if (CCACHE_PROGRAM)
+    message("Found CCache, using it")
     set(C_LAUNCHER   "${CCACHE_PROGRAM}")
     set(CXX_LAUNCHER "${CCACHE_PROGRAM}")
 
@@ -86,6 +90,7 @@ if (CCACHE_PROGRAM)
         set(CMAKE_CXX_COMPILER_LAUNCHER      "${CMAKE_BINARY_DIR}/launch-cxx")
     endif()
 endif()
+]]
 
 # ==================================================================================================
 # Support Vim and Visual Studio Code by generating compile_commands.json
