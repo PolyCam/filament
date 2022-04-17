@@ -190,7 +190,7 @@ struct MaterialSettings {
 
 struct LightSettings {
     bool enableShadows = true;
-    bool enableSunlight = true;
+    bool enableSunlight = false;
     LightManager::ShadowOptions shadowOptions;
     SoftShadowOptions softShadowOptions;
     float sunlightIntensity = 100000.0f;
