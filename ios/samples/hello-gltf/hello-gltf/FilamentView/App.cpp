@@ -150,7 +150,6 @@ void App::setupCamera() {
 }
 
 void App::setupView() {
-    std::cout << "Setting up view with width x height " << width << " x " << height << std::endl;
     view = engine->createView();
     view->setScene(scene);
     view->setCamera(camera);
