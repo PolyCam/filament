@@ -33,10 +33,8 @@
 {
     [super viewDidLoad];
 
-    CGRect nativeBounds = [[UIScreen mainScreen] nativeBounds];
     NSString* resourcePath = [NSBundle mainBundle].bundlePath;
-    app = new App((__bridge void*) self.view.layer, nativeBounds.size.width,
-            nativeBounds.size.height, utils::Path([resourcePath cStringUsingEncoding:NSUTF8StringEncoding]));
+    app = new App(utils::Path([resourcePath cStringUsingEncoding:NSUTF8StringEncoding]));
 
     // Call render 60 times a second.
     displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(render)];
@@ -48,6 +46,13 @@
     panRecognizer.minimumNumberOfTouches = 1;
     panRecognizer.maximumNumberOfTouches = 1;
     [self.view addGestureRecognizer:panRecognizer];
+}
+
+- (void)viewWillAppear:(BOOL)animated
+{
+    [super viewWillAppear:animated];
+    CGRect nativeBounds = [[UIScreen mainScreen] nativeBounds];
+    app->bindNativeLayer((__bridge void*)self.view.layer, nativeBounds.size.width, nativeBounds.size.height);
 }
 
 - (void)render

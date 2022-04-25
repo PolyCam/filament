@@ -45,13 +45,14 @@ namespace gltfio {
 class App {
 public:
 
-    App(void* nativeLayer, uint32_t width, uint32_t height, const utils::Path& resourcePath);
+    App(const utils::Path& resourcePath);
     ~App();
     App(const App&) = delete;
     App& operator=(const App&) = delete;
 
     void render();
     void pan(float deltaX, float deltaY);
+    void bindNativeLayer(void* nativeLayer, uint32_t width, uint32_t height);
 
 private:
 
@@ -60,6 +61,8 @@ private:
     void setupMaterial();
     void setupMesh();
     void setupView();
+    void setupCamera();
+    
 
     void* nativeLayer = nullptr;
     uint32_t width, height;
@@ -86,6 +89,7 @@ private:
     } app;
 
     CameraManipulator cameraManipulator;
+    
 
 };
 

@@ -34,15 +34,17 @@
 
 using namespace ktxreader;
 
-App::App(void* nativeLayer, uint32_t width, uint32_t height, const utils::Path& resourcePath)
-        : nativeLayer(nativeLayer), width(width), height(height), resourcePath(resourcePath) {
+App::App(const utils::Path& resourcePath)
+        : resourcePath(resourcePath) {
     setupFilament();
     setupIbl();
     setupMesh();
-    setupView();
 }
 
 void App::render() {
+    // don't render until we're fully setup
+    if (swapChain == nullptr || renderer == nullptr) { return; }
+    
     if (renderer->beginFrame(swapChain)) {
         renderer->render(view);
         renderer->endFrame();
@@ -79,15 +81,7 @@ void App::setupFilament() {
 #elif FILAMENT_APP_USE_METAL
     engine = Engine::create(filament::Engine::Backend::METAL);
 #endif
-    swapChain = engine->createSwapChain(nativeLayer);
-    renderer = engine->createRenderer();
     scene = engine->createScene();
-    Entity c = EntityManager::get().create();
-    camera = engine->createCamera(c);
-    cameraManipulator.setCamera(camera);
-    cameraManipulator.setViewport(width, height);
-    cameraManipulator.lookAt(filament::math::double3(0, 0, 3), filament::math::double3(0, 0, 0));
-    camera->setProjection(60, (float) width / height, 0.1, 10);
 }
 
 void App::setupIbl() {
@@ -146,7 +140,17 @@ void App::setupMesh() {
     scene->addEntities(app.asset->getEntities(), app.asset->getEntityCount());
 }
 
+void App::setupCamera() {
+    Entity c = EntityManager::get().create();
+    camera = engine->createCamera(c);
+    cameraManipulator.setCamera(camera);
+    cameraManipulator.setViewport(width, height);
+    cameraManipulator.lookAt(filament::math::double3(0, 0, 3), filament::math::double3(0, 0, 0));
+    camera->setProjection(60, (float) width / height, 0.1, 10);
+}
+
 void App::setupView() {
+    std::cout << "Setting up view with width x height " << width << " x " << height << std::endl;
     view = engine->createView();
     view->setScene(scene);
     view->setCamera(camera);
@@ -154,4 +158,17 @@ void App::setupView() {
 
     // Even FXAA anti-aliasing is overkill on iOS retina screens. This saves a few ms.
     view->setAntiAliasing(View::AntiAliasing::NONE);
+}
+
+void App::bindNativeLayer(void* _nativeLayer, uint32_t _width, uint32_t _height) {
+    nativeLayer = _nativeLayer;
+    width = _width;
+    height = _height;
+    if (swapChain != nullptr) {
+        engine->destroy(swapChain);
+    }
+    swapChain = engine->createSwapChain(nativeLayer);
+    renderer = engine->createRenderer();
+    setupCamera();
+    setupView();
 }
