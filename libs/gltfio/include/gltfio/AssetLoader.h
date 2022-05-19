@@ -60,6 +60,12 @@ struct AssetConfiguration {
 
     //! Optional default node name for anonymous nodes
     char* defaultNodeName = nullptr;
+
+    //! Whether to skip ambient occlusion maps. Generally not needed for photogrammetry assets
+    bool skipAmbientOcclusionMaps = false;
+
+    //! Whether to skip normal maps. Generally not needed for photogrammetry assets
+    bool skipNormalMaps = false;
 };
 
 /**
