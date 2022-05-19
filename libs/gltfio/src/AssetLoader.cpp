@@ -152,6 +152,10 @@ struct FAssetLoader : public AssetLoader {
     MaterialProvider* mMaterials;
     Engine* mEngine;
 
+    // options applied to assets created by this loader
+    bool mSkipAmbientOcclusionMaps;
+    bool mSkipNormalMaps;
+
     // Transient state used only for the asset currently being loaded:
     FFilamentAsset* mResult;
     const char* mDefaultNodeName;
