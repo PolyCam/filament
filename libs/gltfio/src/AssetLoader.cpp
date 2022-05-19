@@ -1107,7 +1107,6 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasMetallicRoughnessTexture) {
-        printf("Has metallic roughness! \n");
         // The "metallicRoughnessMap" is actually a specular-glossiness map when the extension is
         // enabled. Note that KHR_materials_pbrSpecularGlossiness specifies that diffuseTexture and
         // specularGlossinessTexture are both sRGB, whereas the core glTF spec stipulates that
@@ -1155,8 +1154,6 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasClearCoat) {
-
-        printf("Model has clear coat! \n");
         mi->setParameter("clearCoatFactor", ccConfig.clearcoat_factor);
         mi->setParameter("clearCoatRoughnessFactor", ccConfig.clearcoat_roughness_factor);
 
@@ -1188,7 +1185,6 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasSheen) {
-        printf("Model has sheen! \n");
         const float* s = shConfig.sheen_color_factor;
         mi->setParameter("sheenColorFactor", float3{s[0], s[1], s[2]});
         mi->setParameter("sheenRoughnessFactor", shConfig.sheen_roughness_factor);
