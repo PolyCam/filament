@@ -66,6 +66,9 @@ struct AssetConfiguration {
 
     //! Whether to skip normal maps. Generally not needed for photogrammetry assets
     bool skipNormalMaps = false;
+
+    //! Whether to skip metallic roughness maps. Generally not needed for photogrammetry assets
+    bool skipMetallicRoughnessMaps = false;
 };
 
 /**

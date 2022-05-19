@@ -95,7 +95,10 @@ struct FAssetLoader : public AssetLoader {
             mTransformManager(config.engine->getTransformManager()),
             mMaterials(config.materials),
             mEngine(config.engine),
-            mDefaultNodeName(config.defaultNodeName) {}
+            mDefaultNodeName(config.defaultNodeName),
+            mSkipAmbientOcclusionMaps(config.skipAmbientOcclusionMaps),
+            mSkipNormalMaps(config.skipNormalMaps),
+            mSkipMetallicRoughnessMaps(config.skipMetallicRoughnessMaps) {}
 
     FFilamentAsset* createAssetFromJson(const uint8_t* bytes, uint32_t nbytes);
     FFilamentAsset* createAssetFromBinary(const uint8_t* bytes, uint32_t nbytes);
@@ -153,6 +156,7 @@ struct FAssetLoader : public AssetLoader {
     // options applied to assets created by this loader
     bool mSkipAmbientOcclusionMaps;
     bool mSkipNormalMaps;
+    bool mSkipMetallicRoughnessMaps;
 
     // Transient state used only for the asset currently being loaded:
     FFilamentAsset* mResult;
@@ -991,8 +995,8 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
         .unlit = !!inputMat->unlit,
         .hasVertexColors = vertexColor,
         .hasBaseColorTexture = baseColorTexture.texture != nullptr,
-        .hasNormalTexture = inputMat->normal_texture.texture != nullptr,
-        .hasOcclusionTexture = inputMat->occlusion_texture.texture != nullptr,
+        .hasNormalTexture = inputMat->normal_texture.texture != nullptr && !mSkipNormalMaps,
+        .hasOcclusionTexture = inputMat->occlusion_texture.texture != nullptr && !mSkipAmbientOcclusionMaps,
         .hasEmissiveTexture = inputMat->emissive_texture.texture != nullptr,
         .enableDiagnostics = mDiagnosticsEnabled,
         .baseColorUV = (uint8_t) baseColorTexture.texcoord,
@@ -1034,7 +1038,7 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
             matkey.specularGlossinessUV = (uint8_t) metallicRoughnessTexture.texcoord;
         }
     } else {
-        matkey.hasMetallicRoughnessTexture = metallicRoughnessTexture.texture != nullptr;
+        matkey.hasMetallicRoughnessTexture = metallicRoughnessTexture.texture != nullptr && !mSkipMetallicRoughnessMaps;
         matkey.metallicRoughnessUV = (uint8_t) metallicRoughnessTexture.texcoord;
     }
 
@@ -1103,6 +1107,7 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasMetallicRoughnessTexture) {
+        printf("Has metallic roughness! \n");
         // The "metallicRoughnessMap" is actually a specular-glossiness map when the extension is
         // enabled. Note that KHR_materials_pbrSpecularGlossiness specifies that diffuseTexture and
         // specularGlossinessTexture are both sRGB, whereas the core glTF spec stipulates that
@@ -1150,6 +1155,8 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasClearCoat) {
+
+        printf("Model has clear coat! \n");
         mi->setParameter("clearCoatFactor", ccConfig.clearcoat_factor);
         mi->setParameter("clearCoatRoughnessFactor", ccConfig.clearcoat_roughness_factor);
 
@@ -1181,6 +1188,7 @@ MaterialInstance* FAssetLoader::createMaterialInstance(const cgltf_data* srcAsse
     }
 
     if (matkey.hasSheen) {
+        printf("Model has sheen! \n");
         const float* s = shConfig.sheen_color_factor;
         mi->setParameter("sheenColorFactor", float3{s[0], s[1], s[2]});
         mi->setParameter("sheenRoughnessFactor", shConfig.sheen_roughness_factor);
