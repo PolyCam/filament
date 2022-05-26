@@ -63,8 +63,12 @@ endif()
 # ==================================================================================================
 # Support for ccache
 # ==================================================================================================
+#[[
+
+TODO: see if we can get ccache working again
 find_program(CCACHE_PROGRAM ccache)
 if (CCACHE_PROGRAM)
+    message("Found CCache, using it")
     set(C_LAUNCHER   "${CCACHE_PROGRAM}")
     set(CXX_LAUNCHER "${CCACHE_PROGRAM}")
 
@@ -86,6 +90,7 @@ if (CCACHE_PROGRAM)
         set(CMAKE_CXX_COMPILER_LAUNCHER      "${CMAKE_BINARY_DIR}/launch-cxx")
     endif()
 endif()
+]]
 
 # ==================================================================================================
 # Support Vim and Visual Studio Code by generating compile_commands.json
