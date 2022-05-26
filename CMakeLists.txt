@@ -17,7 +17,7 @@ option(FILAMENT_USE_SWIFTSHADER "Compile Filament against SwiftShader" OFF)
 
 option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
 
-option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
+option(FILAMENT_SKIP_SAMPLES "Don't build samples" ON)
 
 option(FILAMENT_SUPPORTS_XCB "Include XCB support in Linux builds" ON)
 
