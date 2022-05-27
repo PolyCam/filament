@@ -21,14 +21,31 @@ set(PRIVATE_HDRS
     ${PRIVATE_HDR_DIR}/imstb_truetype.h
 )
 
+if (APPLE)
+    set(BACKEND_SRCS
+        ${SRC_DIR}/backends/imgui_impl_sdl.cpp
+        ${SRC_DIR}/backends/imgui_impl_metal.mm
+    )
+else()
+    set(BACKEND_SRCS
+    )
+endif()
+
 set(SRCS
     ${SRC_DIR}/imgui.cpp
     ${SRC_DIR}/imgui_demo.cpp
     ${SRC_DIR}/imgui_draw.cpp
     ${SRC_DIR}/imgui_tables.cpp
     ${SRC_DIR}/imgui_widgets.cpp
+    ${BACKEND_SRCS}
 )
 
 add_library(${TARGET} STATIC ${PRIVATE_HDRS} ${PUBLIC_HDRS} ${SRCS})
 
 target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR} ${PRIVATE_HDR_DIR})
+
+if (APPLE)
+    set_property(TARGET imgui APPEND_STRING PROPERTY COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(imgui PRIVATE sdl2)
+endif()
+
