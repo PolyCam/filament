@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #if defined(WIN32)
 #    include <locale.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__EMSCRIPTEN__)
 #    include <locale.h>
 #else
 #    include <xlocale.h>
