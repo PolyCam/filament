@@ -93,3 +93,9 @@ if (NOT MSVC)
             $<$<CONFIG:Release>:-ffast-math>
     )
 endif()
+
+# ==================================================================================================
+# Installation
+# ==================================================================================================
+install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
+install(DIRECTORY ${PUBLIC_HDR_DIR}/filagui DESTINATION include)
