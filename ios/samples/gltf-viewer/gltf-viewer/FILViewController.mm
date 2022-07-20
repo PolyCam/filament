@@ -18,6 +18,7 @@
 
 #import "FILModelView.h"
 
+#include <filament/Engine.h>
 #include <filament/Scene.h>
 #include <filament/Skybox.h>
 
@@ -25,13 +26,14 @@
 
 #include <gltfio/Animator.h>
 
-#include <image/KtxUtility.h>
+#include <ktxreader/Ktx1Reader.h>
 
 #include <viewer/AutomationEngine.h>
 #include <viewer/RemoteServer.h>
 
 using namespace filament;
 using namespace utils;
+using namespace ktxreader;
 
 @interface FILViewController ()
 
@@ -54,6 +56,8 @@ using namespace utils;
     Texture* _iblTexture;
     IndirectLight* _indirectLight;
     Entity _sun;
+
+    UITapGestureRecognizer* _doubleTapRecognizer;
 }
 
 #pragma mark UIViewController methods
@@ -89,6 +93,10 @@ using namespace utils;
 
     _server = new viewer::RemoteServer();
     _automation = viewer::AutomationEngine::createDefault();
+
+    _doubleTapRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(reloadModel)];
+    _doubleTapRecognizer.numberOfTapsRequired = 2;
+    [self.modelView addGestureRecognizer:_doubleTapRecognizer];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -98,6 +106,8 @@ using namespace utils;
 - (void)viewWillDisappear:(BOOL)animated {
     [self stopDisplayLink];
 }
+
+#pragma mark Private
 
 - (void)startDisplayLink {
     [self stopDisplayLink];
@@ -113,8 +123,6 @@ using namespace utils;
     [_displayLink invalidate];
     _displayLink = nil;
 }
-
-#pragma mark Private
 
 - (void)createRenderablesFromPath:(NSString*)model {
     // Retrieve the full path to the model in the documents directory.
@@ -169,10 +177,10 @@ using namespace utils;
     assert(skyboxPath.length > 0);
     NSData* skyboxBuffer = [NSData dataWithContentsOfFile:skyboxPath];
 
-    image::KtxBundle* skyboxBundle =
-            new image::KtxBundle(static_cast<const uint8_t*>(skyboxBuffer.bytes),
+    image::Ktx1Bundle* skyboxBundle =
+            new image::Ktx1Bundle(static_cast<const uint8_t*>(skyboxBuffer.bytes),
                     static_cast<uint32_t>(skyboxBuffer.length));
-    _skyboxTexture = image::ktx::createTexture(self.modelView.engine, skyboxBundle, false);
+    _skyboxTexture = Ktx1Reader::createTexture(self.modelView.engine, skyboxBundle, false);
     _skybox = filament::Skybox::Builder().environment(_skyboxTexture).build(*self.modelView.engine);
     self.modelView.scene->setSkybox(_skybox);
 
@@ -181,11 +189,11 @@ using namespace utils;
     assert(iblPath.length > 0);
     NSData* iblBuffer = [NSData dataWithContentsOfFile:iblPath];
 
-    image::KtxBundle* iblBundle = new image::KtxBundle(
+    image::Ktx1Bundle* iblBundle = new image::Ktx1Bundle(
             static_cast<const uint8_t*>(iblBuffer.bytes), static_cast<uint32_t>(iblBuffer.length));
     math::float3 harmonics[9];
     iblBundle->getSphericalHarmonics(harmonics);
-    _iblTexture = image::ktx::createTexture(self.modelView.engine, iblBundle, false);
+    _iblTexture = Ktx1Reader::createTexture(self.modelView.engine, iblBundle, false);
     _indirectLight = IndirectLight::Builder()
                              .reflections(_iblTexture)
                              .irradiance(3, harmonics)
@@ -253,6 +261,11 @@ using namespace utils;
     }
 
     [self.modelView render];
+}
+
+- (void)reloadModel {
+    [self.modelView destroyModel];
+    [self createDefaultRenderables];
 }
 
 - (void)dealloc {

@@ -40,7 +40,6 @@
 
 namespace filament {
 namespace backend {
-namespace metal {
 
 class MetalSwapChain : public HwSwapChain {
 public:
@@ -103,7 +102,7 @@ private:
     // These two fields store a callback and user data to notify the client that a frame is ready
     // for presentation.
     // If frameScheduledCallback is nullptr, then the Metal backend automatically calls
-    // presentDrawable when the frame is commited.
+    // presentDrawable when the frame is committed.
     // Otherwise, the Metal backend will not automatically present the frame. Instead, clients bear
     // the responsibility of presenting the frame by calling the PresentCallable object.
     FrameScheduledCallback frameScheduledCallback = nullptr;
@@ -118,6 +117,7 @@ public:
     MetalBufferObject(MetalContext& context, BufferUsage usage, uint32_t byteCount);
 
     void updateBuffer(void* data, size_t size, uint32_t byteOffset);
+    void updateBufferUnsynchronized(void* data, size_t size, uint32_t byteOffset);
     MetalBuffer* getBuffer() { return &buffer; }
 
     // Tracks which uniform buffers this buffer object is bound into.
@@ -284,6 +284,19 @@ public:
 
     void setUpRenderPassAttachments(MTLRenderPassDescriptor* descriptor, const RenderPassParams& params);
 
+    MTLRegion getRegionFromClientRect(Viewport rect) {
+        const uint32_t height = getAttachmentHeight();
+        assert_invariant(height > 0);
+
+        // Convert the Filament rect into Metal texture coordinates, taking into account Metal's
+        // inverted texture space. Note that the underlying Texture could be larger than the
+        // RenderTarget. Metal's texture coordinates have (0, 0) at the top-left of the texture, but
+        // Filament's coordinates have (0, 0) at bottom-left.
+        return MTLRegionMake2D((NSUInteger)rect.left,
+                std::max(height - (int64_t) rect.bottom - rect.height, (int64_t) 0),
+                rect.width, rect.height);
+    }
+
     bool isDefaultRenderTarget() const { return defaultRenderTarget; }
     uint8_t getSamples() const { return samples; }
 
@@ -298,12 +311,15 @@ private:
     static id<MTLTexture> createMultisampledTexture(id<MTLDevice> device, MTLPixelFormat format,
             uint32_t width, uint32_t height, uint8_t samples);
 
+    uint32_t getAttachmentHeight() noexcept;
+
     MetalContext* context;
     bool defaultRenderTarget = false;
     uint8_t samples = 1;
 
     Attachment color[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT] = {};
     Attachment depth = {};
+    uint32_t attachmentHeight = 0;
 };
 
 // MetalFence is used to implement both Fences and Syncs.
@@ -357,7 +373,6 @@ struct MetalTimerQuery : public HwTimerQuery {
     std::shared_ptr<Status> status;
 };
 
-} // namespace metal
 } // namespace backend
 } // namespace filament
 

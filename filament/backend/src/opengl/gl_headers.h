@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_GL_HEADERS_H
-#define TNT_FILAMENT_DRIVER_GL_HEADERS_H
+#ifndef TNT_FILAMENT_BACKEND_OPENGL_GL_HEADERS_H
+#define TNT_FILAMENT_BACKEND_OPENGL_GL_HEADERS_H
 
 #if defined(__ANDROID__) || defined(FILAMENT_USE_EXTERNAL_GLES3) || defined(__EMSCRIPTEN__)
 
@@ -115,6 +115,42 @@
 
 #endif
 
+// This is an odd duck function that exists in WebGL 2.0 but not in OpenGL ES.
+#if defined(__EMSCRIPTEN__)
+extern "C" {
+void glGetBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, void *data);
+}
+#endif
+
+#if (!defined(GL_ES_VERSION_2_0) && !defined(GL_VERSION_4_1))
+#error "Minimum header version must be OpenGL ES 2.0 or OpenGL 4.1"
+#endif
+
+
+#define BACKEND_OPENGL_VERSION_GLES     0
+#define BACKEND_OPENGL_VERSION_GL       1
+#if defined(GL_ES_VERSION_2_0)
+#   define BACKEND_OPENGL_VERSION      BACKEND_OPENGL_VERSION_GLES
+#elif defined(GL_VERSION_4_1)
+#   define BACKEND_OPENGL_VERSION      BACKEND_OPENGL_VERSION_GL
+#endif
+
+#define BACKEND_OPENGL_LEVEL_GLES20     0
+#define BACKEND_OPENGL_LEVEL_GLES30     1
+#define BACKEND_OPENGL_LEVEL_GLES31     2
+
+#if defined(GL_VERSION_4_1)
+#   define BACKEND_OPENGL_LEVEL        BACKEND_OPENGL_LEVEL_GLES30
+#endif
+
+#if defined(GL_ES_VERSION_3_1)
+#   define BACKEND_OPENGL_LEVEL        BACKEND_OPENGL_LEVEL_GLES31
+#elif defined(GL_ES_VERSION_3_0)
+#   define BACKEND_OPENGL_LEVEL        BACKEND_OPENGL_LEVEL_GLES30
+#elif defined(GL_ES_VERSION_2_0)
+#   define BACKEND_OPENGL_LEVEL        BACKEND_OPENGL_LEVEL_GLES20
+#endif
+
 // This is just to simplify the implementation (i.e. so we don't have to have #ifdefs everywhere)
 #ifndef GL_OES_EGL_image_external
 #define GL_TEXTURE_EXTERNAL_OES           0x8D65
@@ -122,26 +158,4 @@
 
 #include "NullGLES.h"
 
-#if (!defined(GL_ES_VERSION_3_0) && !defined(GL_VERSION_4_1))
-#error "Minimum header version must be OpenGL ES 3.0 or OpenGL 4.1"
-#endif
-
-#if defined(GL_ES_VERSION_3_0)
-#define GLES30_HEADERS true
-#else
-#define GLES30_HEADERS false
-#endif
-
-#if defined(GL_ES_VERSION_3_1)
-#define GLES31_HEADERS true
-#else
-#define GLES31_HEADERS false
-#endif
-
-#if defined(GL_VERSION_4_1)
-#define GL41_HEADERS true
-#else
-#define GL41_HEADERS false
-#endif
-
-#endif // TNT_FILAMENT_DRIVER_GL_HEADERS_H
+#endif // TNT_FILAMENT_BACKEND_OPENGL_GL_HEADERS_H

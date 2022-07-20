@@ -120,15 +120,13 @@ public:
     float getLightFar() const noexcept { return mZLightFar; }
 
     // update Records and Froxels texture with lights data. this is thread-safe.
-    void froxelizeLights(FEngine& engine, CameraInfo const& camera,
+    void froxelizeLights(FEngine& engine, math::mat4f const& viewMatrix,
             const FScene::LightSoa& lightData) noexcept;
 
     void updateUniforms(PerViewUib& s) {
         s.zParams = mParamsZ;
-        s.fParams = mParamsF.yz;
-        s.fParamsX = mParamsF.x;
-        s.oneOverFroxelDimensionX = mOneOverDimension.x;
-        s.oneOverFroxelDimensionY = mOneOverDimension.y;
+        s.fParams = mParamsF;
+        s.froxelCountXY = math::float2{ mViewport.width, mViewport.height } / mFroxelDimension;
     }
 
     // send froxel data to GPU
@@ -194,7 +192,7 @@ private:
     bool update() noexcept;
 
     void froxelizeLoop(FEngine& engine,
-            const CameraInfo& camera, const FScene::LightSoa& lightData) noexcept;
+            math::mat4f const& viewMatrix, const FScene::LightSoa& lightData) noexcept;
 
     void froxelizeAssignRecordsCompress() noexcept;
 
@@ -242,7 +240,6 @@ private:
     float mLinearizer = 0.0f;
     float mClipToFroxelX = 0.0f;
     float mClipToFroxelY = 0.0f;
-    math::float2 mOneOverDimension = {};
     backend::BufferObjectHandle mRecordsBuffer;
     backend::Handle<backend::HwTexture> mFroxelTexture;
 

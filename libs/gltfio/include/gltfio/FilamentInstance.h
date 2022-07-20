@@ -20,7 +20,7 @@
 #include <utils/compiler.h>
 #include <utils/Entity.h>
 
-namespace gltfio {
+namespace filament::gltfio {
 
 class Animator;
 class FilamentAsset;
@@ -57,6 +57,13 @@ public:
     utils::Entity getRoot() const noexcept;
 
     /**
+     * Applies the given material variant to all primitives in this instance.
+     *
+     * Ignored if variantIndex is out of bounds.
+     */
+    void applyMaterialVariant(size_t variantIndex) noexcept;
+
+    /**
      * Returns the animation engine for the instance.
      *
      * Note that an animator can be obtained either from an individual instance, or from the
@@ -69,6 +76,6 @@ public:
     Animator* getAnimator() noexcept;
 };
 
-} // namespace gltfio
+} // namespace filament::gltfio
 
 #endif // GLTFIO_FILAMENTINSTANCE_H

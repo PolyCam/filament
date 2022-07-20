@@ -30,9 +30,9 @@ import com.google.android.filament.MaterialInstance;
  *
  * <p>For usage instructions, see the documentation for {@link AssetLoader}.</p>
  *
- * <p>This class owns a hierarchy of entities that have been loaded from a glTF asset. Every entity has
- * a <code>TransformManager</code> component, and some entities also have
- * <code>NameComponentManager</code> and/or <code>RenderableManager</code> components.</p>
+ * <p>This class owns a hierarchy of entities that have been loaded from a glTF asset. Every entity
+ * has a <code>TransformManager</code> component, and some entities also have compnents managed by
+ * <code>NameComponentManager</code>, <code>RenderableManager</code>, and others.</p>
  *
  * <p>In addition to the aforementioned entities, an asset has strong ownership over a list of
  * <code>VertexBuffer</code>, <code>IndexBuffer</code>, <code>MaterialInstance</code>, and
@@ -110,6 +110,15 @@ public class FilamentAsset {
     public @NonNull @Entity int[] getLightEntities() {
         int[] result = new int[nGetLightEntityCount(mNativeObject)];
         nGetLightEntities(mNativeObject, result);
+        return result;
+    }
+
+    /**
+     * Gets only the entities that have renderable components.
+     */
+    public @NonNull @Entity int[] getRenderableEntities() {
+        int[] result = new int[nGetRenderableEntityCount(mNativeObject)];
+        nGetRenderableEntities(mNativeObject, result);
         return result;
     }
 
@@ -217,10 +226,64 @@ public class FilamentAsset {
     }
 
     /**
-     * Get the target name at target index in the given entity.
+     * Gets the skin count of this asset.
      */
-    public String getMorphTargetNameAt(@Entity int entity, int targetIndex) {
-        return nGetMorphTargetNameAt(getNativeObject(), entity, targetIndex);
+    public int getSkinCount() {
+        return nGetSkinCount(getNativeObject());
+    }
+
+    /**
+     * Gets the skin name at skin index in this asset.
+     */
+    public @NonNull String[] getSkinNames() {
+        String[] result = new String[getSkinCount()];
+        nGetSkinNames(getNativeObject(), result);
+        return result;
+    }
+
+    /**
+     * Attaches the given skin to the given node, which must have an associated mesh with
+     * BONE_INDICES and BONE_WEIGHTS attributes.
+     *
+     * This is a no-op if the given skin index or target is invalid.
+     */
+    public void attachSkin(@IntRange(from = 0) int skinIndex, @Entity int target) {
+        nAttachSkin(getNativeObject(), skinIndex, target);
+    }
+
+    /**
+     * Attaches the given skin to the given node, which must have an associated mesh with
+     * BONE_INDICES and BONE_WEIGHTS attributes.
+     *
+     * This is a no-op if the given skin index or target is invalid.
+     */
+    public void detachSkin(@IntRange(from = 0) int skinIndex, @Entity int target) {
+        nDetachSkin(getNativeObject(), skinIndex, target);
+    }
+
+    /**
+     * Gets the joint count at skin index in this asset.
+     */
+    public int getJointCountAt(@IntRange(from = 0) int skinIndex) {
+        return nGetJointCountAt(getNativeObject(), skinIndex);
+    }
+
+    /**
+     * Gets joints at skin index in this asset.
+     */
+    public @NonNull @Entity int[] getJointsAt(@IntRange(from = 0) int skinIndex) {
+        int[] result = new int[getJointCountAt(skinIndex)];
+        nGetJointsAt(getNativeObject(), skinIndex, result);
+        return result;
+    }
+
+    /**
+     * Gets the names of all morph targets in the given entity.
+     */
+    public @NonNull String[] getMorphTargetNames(@Entity int entity) {
+        String[] names = new String[nGetMorphTargetCount(mNativeObject, entity)];
+        nGetMorphTargetNames(mNativeObject, entity, names);
+        return names;
     }
 
     /**
@@ -230,6 +293,31 @@ public class FilamentAsset {
         String[] uris = new String[nGetResourceUriCount(mNativeObject)];
         nGetResourceUris(mNativeObject, uris);
         return uris;
+    }
+
+    /**
+     * Returns the names of all material variants.
+     */
+    public @NonNull String[] getMaterialVariantNames() {
+        String[] names = new String[nGetMaterialVariantCount(mNativeObject)];
+        nGetMaterialVariantNames(mNativeObject, names);
+        return names;
+    }
+
+    /**
+     * Applies the given material variant to all primitives that it affects.
+     *
+     * This is efficient because it merely swaps around persistent MaterialInstances. If you change
+     * a material parameter while a certain variant is active, the updated value will be remembered
+     * after you re-apply that variant.
+     *
+     * If the asset is instanced, this affects all instances in the same way.
+     * To set the variant on an individual instance, use FilamentInstance#applyMaterialVariant.
+     *
+     * Ignored if variantIndex is out of bounds.
+     */
+    public void applyMaterialVariant(@IntRange(from = 0) int variantIndex) {
+        nApplyMaterialVariant(getNativeObject(), variantIndex);
     }
 
     /**
@@ -262,17 +350,33 @@ public class FilamentAsset {
     private static native int nGetLightEntityCount(long nativeAsset);
     private static native void nGetLightEntities(long nativeAsset, int[] result);
 
+    private static native int nGetRenderableEntityCount(long nativeAsset);
+    private static native void nGetRenderableEntities(long nativeAsset, int[] result);
+
     private static native int nGetCameraEntityCount(long nativeAsset);
     private static native void nGetCameraEntities(long nativeAsset, int[] result);
 
     private static native int nGetMaterialInstanceCount(long nativeAsset);
     private static native void nGetMaterialInstances(long nativeAsset, long[] nativeResults);
 
+    private static native int nGetMaterialVariantCount(long nativeAsset);
+    private static native void nGetMaterialVariantNames(long nativeAsset, String[] result);
+
+    private static native int nGetMorphTargetCount(long nativeAsset, int entity);
+    private static native void nGetMorphTargetNames(long nativeAsset, int entity, String[] result);
+
+    private static native void nAttachSkin(long nativeAsset, int skinIndex, int entity);
+    private static native void nDetachSkin(long nativeAsset, int skinIndex, int entity);
+
     private static native void nGetBoundingBox(long nativeAsset, float[] box);
     private static native String nGetName(long nativeAsset, int entity);
     private static native String nGetExtras(long nativeAsset, int entity);
     private static native long nGetAnimator(long nativeAsset);
-    private static native String nGetMorphTargetNameAt(long nativeAsset, int entity, int targetIndex);
+    private static native void nApplyMaterialVariant(long nativeAsset, int variantIndex);
+    private static native int nGetSkinCount(long nativeAsset);
+    private static native void nGetSkinNames(long nativeAsset, String[] result);
+    private static native int nGetJointCountAt(long nativeAsset, int skinIndex);
+    private static native void nGetJointsAt(long nativeAsset, int skinIndex, int[] result);
     private static native int nGetResourceUriCount(long nativeAsset);
     private static native void nGetResourceUris(long nativeAsset, String[] result);
     private static native void nReleaseSourceData(long nativeAsset);

@@ -2,7 +2,7 @@
 set -e
 
 # Host tools required by Android, WebGL, and iOS builds
-MOBILE_HOST_TOOLS="matc resgen cmgen filamesh"
+MOBILE_HOST_TOOLS="matc resgen cmgen filamesh uberz"
 WEB_HOST_TOOLS="${MOBILE_HOST_TOOLS} mipgen filamesh"
 
 function print_help {
@@ -98,9 +98,9 @@ function print_matdbg_help {
     echo ""
     echo "FOR ANDROID BUILDS:"
     echo ""
-    echo "1) The most reliable way to enable matdbg is to bypass Gradle and"
-    echo "   directly modify the appropriate two lines in the following file:"
-    echo "       ./android/filament-android/CMakeLists.txt"
+    echo "1) For Android Studio builds, make sure to set:"
+    echo "       -Pcom.google.android.filament.matdbg"
+    echo "   option in Preferences > Build > Compiler > Command line options."
     echo ""
     echo "2) The port number is hardcoded to 8081 so you will need to do:"
     echo "       adb forward tcp:8081 tcp:8081"
@@ -156,6 +156,7 @@ VULKAN_ANDROID_GRADLE_OPTION=""
 SWIFTSHADER_OPTION="-DFILAMENT_USE_SWIFTSHADER=OFF"
 
 MATDBG_OPTION="-DFILAMENT_ENABLE_MATDBG=OFF"
+MATDBG_GRADLE_OPTION=""
 
 IOS_BUILD_SIMULATOR=false
 BUILD_UNIVERSAL_LIBRARIES=false
@@ -303,7 +304,7 @@ function build_webgl_with_target {
 }
 
 function build_webgl {
-    # For the host tools, supress install and always use Release.
+    # For the host tools, suppress install and always use Release.
     local old_install_command=${INSTALL_COMMAND}; INSTALL_COMMAND=
     local old_issue_debug_build=${ISSUE_DEBUG_BUILD}; ISSUE_DEBUG_BUILD=false
     local old_issue_release_build=${ISSUE_RELEASE_BUILD}; ISSUE_RELEASE_BUILD=true
@@ -402,7 +403,7 @@ function ensure_android_build {
 function build_android {
     ensure_android_build
 
-    # Supress intermediate desktop tools install
+    # Suppress intermediate desktop tools install
     local old_install_command=${INSTALL_COMMAND}
     INSTALL_COMMAND=
 
@@ -456,6 +457,7 @@ function build_android {
             -Pcom.google.android.filament.dist-dir=../out/android-debug/filament \
             -Pcom.google.android.filament.abis=${ABI_GRADLE_OPTION} \
             ${VULKAN_ANDROID_GRADLE_OPTION} \
+            ${MATDBG_GRADLE_OPTION} \
             :filament-android:assembleDebug \
             :gltfio-android:assembleDebug \
             :filament-utils-android:assembleDebug
@@ -476,19 +478,16 @@ function build_android {
 
         if [[ "${INSTALL_COMMAND}" ]]; then
             echo "Installing out/filamat-android-debug.aar..."
-            cp filamat-android/build/outputs/aar/filamat-android-lite-debug.aar ../out/
             cp filamat-android/build/outputs/aar/filamat-android-full-debug.aar ../out/filamat-android-debug.aar
 
             echo "Installing out/filament-android-debug.aar..."
             cp filament-android/build/outputs/aar/filament-android-debug.aar ../out/
 
             echo "Installing out/gltfio-android-debug.aar..."
-            cp gltfio-android/build/outputs/aar/gltfio-android-lite-debug.aar ../out/
             cp gltfio-android/build/outputs/aar/gltfio-android-full-debug.aar ../out/gltfio-android-debug.aar
 
             echo "Installing out/filament-utils-android-debug.aar..."
-            cp filament-utils-android/build/outputs/aar/filament-utils-android-lite-debug.aar ../out/
-            cp filament-utils-android/build/outputs/aar/filament-utils-android-full-debug.aar ../out/filament-utils-android-debug.aar
+            cp filament-utils-android/build/outputs/aar/filament-utils-android-debug.aar ../out/filament-utils-android-debug.aar
 
             if [[ "${BUILD_ANDROID_SAMPLES}" == "true" ]]; then
                 for sample in ${ANDROID_SAMPLES}; do
@@ -505,6 +504,7 @@ function build_android {
             -Pcom.google.android.filament.dist-dir=../out/android-release/filament \
             -Pcom.google.android.filament.abis=${ABI_GRADLE_OPTION} \
             ${VULKAN_ANDROID_GRADLE_OPTION} \
+            ${MATDBG_GRADLE_OPTION} \
             :filament-android:assembleRelease \
             :gltfio-android:assembleRelease \
             :filament-utils-android:assembleRelease
@@ -532,12 +532,10 @@ function build_android {
             cp filament-android/build/outputs/aar/filament-android-release.aar ../out/
 
             echo "Installing out/gltfio-android-release.aar..."
-            cp gltfio-android/build/outputs/aar/gltfio-android-lite-release.aar ../out/
             cp gltfio-android/build/outputs/aar/gltfio-android-full-release.aar ../out/gltfio-android-release.aar
 
             echo "Installing out/filament-utils-android-release.aar..."
-            cp filament-utils-android/build/outputs/aar/filament-utils-android-lite-release.aar ../out/
-            cp filament-utils-android/build/outputs/aar/filament-utils-android-full-release.aar ../out/filament-utils-android-release.aar
+            cp filament-utils-android/build/outputs/aar/filament-utils-android-release.aar ../out/filament-utils-android-release.aar
 
             if [[ "${BUILD_ANDROID_SAMPLES}" == "true" ]]; then
                 for sample in ${ANDROID_SAMPLES}; do
@@ -600,7 +598,7 @@ function archive_ios {
 }
 
 function build_ios {
-    # Supress intermediate desktop tools install
+    # Suppress intermediate desktop tools install
     local old_install_command=${INSTALL_COMMAND}
     INSTALL_COMMAND=
 
@@ -756,6 +754,7 @@ while getopts ":hacCfijmp:q:uvslwtdk:" opt; do
         d)
             PRINT_MATDBG_HELP=true
             MATDBG_OPTION="-DFILAMENT_ENABLE_MATDBG=ON, -DFILAMENT_DISABLE_MATOPT=ON, -DFILAMENT_BUILD_FILAMAT=ON"
+            MATDBG_GRADLE_OPTION="-Pcom.google.android.filament.matdbg"
             ;;
         f)
             ISSUE_CMAKE_ALWAYS=true

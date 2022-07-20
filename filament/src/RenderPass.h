@@ -54,12 +54,16 @@ public:
      *   t     = two-pass transparency ordering
      *   0     = reserved, must be zero
      *
+     *
+     * TODO: we need to add a "primitive id" in the low-bits of material-id, so that
+     *       auto-instancing can work better
+     *
      *   DEPTH command
-     *   |   6  | 2| 2|1| 3 | 2|       16       |               32               |
-     *   +------+--+--+-+---+--+----------------+--------------------------------+
-     *   |000000|01|00|0|ppp|00|0000000000000000|          distanceBits          |
-     *   +------+--+--+-+---+-------------------+--------------------------------+
-     *   | correctness      |     optimizations (truncation allowed)             |
+     *   |   6  | 2| 2|1| 3 | 2|  6   |   10     |               32               |
+     *   +------+--+--+-+---+--+------+----------+--------------------------------+
+     *   |000000|01|00|0|ppp|00|000000| Z-bucket |          material-id           |
+     *   +------+--+--+-+---+--+------+----------+--------------------------------+
+     *   | correctness      |      optimizations (truncation allowed)             |
      *
      *
      *   COLOR command
@@ -102,9 +106,6 @@ public:
      *   +-----------------------------------------------------------------------+
      */
     using CommandKey = uint64_t;
-
-    static constexpr uint64_t DISTANCE_BITS_MASK            = 0xFFFFFFFFllu;
-    static constexpr unsigned DISTANCE_BITS_SHIFT           = 0;
 
     static constexpr uint64_t BLEND_ORDER_MASK              = 0xFFFEllu;
     static constexpr unsigned BLEND_ORDER_SHIFT             = 1;
@@ -213,22 +214,33 @@ public:
         return boolish ? std::numeric_limits<uint64_t>::max() : uint64_t(0);
     }
 
-    struct PrimitiveInfo { // 32 bytes
-        FMaterialInstance const* mi = nullptr;                          // 8 bytes (4)
+    template<typename T>
+    static CommandKey select(T boolish, uint64_t value) noexcept {
+        return boolish ? value : uint64_t(0);
+    }
+
+    struct PrimitiveInfo { // 48 bytes
+        union {
+            FMaterialInstance const* mi;
+            uint64_t padding = {}; // ensures mi is 8 bytes on all archs
+        };                                                              // 8 bytes
+        backend::RasterState rasterState;                               // 8 bytes
         backend::Handle<backend::HwRenderPrimitive> primitiveHandle;    // 4 bytes
+        backend::Handle<backend::HwBufferObject> skinningHandle;        // 4 bytes
         backend::Handle<backend::HwBufferObject> morphWeightBuffer;     // 4 bytes
         backend::Handle<backend::HwSamplerGroup> morphTargetBuffer;     // 4 bytes
-        backend::RasterState rasterState;                               // 4 bytes
-        uint16_t index = 0;                                             // 2 bytes
+        uint32_t index = 0;                                             // 4 bytes
+        uint32_t skinningOffset = 0;                                    // 4 bytes
         uint16_t instanceCount;                                         // 2 bytes
         Variant materialVariant;                                        // 1 byte
-        uint8_t reserved[11 - sizeof(void*)] = {};                      // 3 bytes (7)
+        uint8_t reserved[5] = {};                                       // 5 bytes
     };
-    static_assert(sizeof(PrimitiveInfo) == 32);
+    static_assert(sizeof(PrimitiveInfo) == 48);
 
-    struct alignas(8) Command {     // 40 bytes
+    struct alignas(8) Command {     // 64 bytes
         CommandKey key = 0;         //  8 bytes
-        PrimitiveInfo primitive;    // 32 bytes
+        PrimitiveInfo primitive;    // 48 bytes
+        uint64_t reserved = 0;      //  8 bytes
         bool operator < (Command const& rhs) const noexcept { return key < rhs.key; }
         // placement new declared as "throw" to avoid the compiler's null-check
         inline void* operator new (std::size_t, void* ptr) {
@@ -236,7 +248,7 @@ public:
             return ptr;
         }
     };
-    static_assert(sizeof(Command) == 40);
+    static_assert(sizeof(Command) == 64);
     static_assert(std::is_trivially_destructible_v<Command>,
             "Command isn't trivially destructible");
 
@@ -246,7 +258,7 @@ public:
 
     // Arena used for commands
     using Arena = utils::Arena<
-            utils::LinearAllocator,
+            utils::LinearAllocator,                 // note: can't change this allocator
             utils::LockingPolicy::NoLock,
             utils::TrackingPolicy::HighWatermark,
             utils::AreaPolicy::StaticArea>;
@@ -265,14 +277,17 @@ public:
     ~RenderPass() noexcept;
 
     // if non-null, overrides the material's polygon offset
-    void overridePolygonOffset(backend::PolygonOffset* polygonOffset) noexcept;
+    void overridePolygonOffset(backend::PolygonOffset const* polygonOffset) noexcept;
+
+    // if non-null, overrides the material's scissor
+    void overrideScissor(backend::Viewport const* scissor) noexcept;
 
     // specifies the geometry to generate commands for
     void setGeometry(FScene::RenderableSoa const& soa, utils::Range<uint32_t> vr,
             backend::Handle<backend::HwBufferObject> uboHandle) noexcept;
 
     // specifies camera information (e.g. used for sorting commands)
-    void setCamera(const CameraInfo& camera) noexcept { mCamera = camera; }
+    void setCamera(const CameraInfo& camera) noexcept;
 
     //  flags controlling how commands are generated
     void setRenderFlags(RenderFlags flags) noexcept { mFlags = flags; }
@@ -294,7 +309,7 @@ public:
     // the current camera, geometry and flags set. This can be called multiple times if needed.
     void appendCommands(CommandTypeFlags commandTypeFlags) noexcept;
 
-    // sorts commands, then trims sentinels
+    // sorts and instancify commands then trims sentinels
     void sortCommands() noexcept;
 
     // Helper to execute all the commands generated by this RenderPass
@@ -316,24 +331,25 @@ public:
         FEngine& mEngine;
         Command const* mBegin;
         Command const* mEnd;
-        FScene::RenderableSoa const& mRenderableSoa;
         const CustomCommandVector mCustomCommands;
         const backend::Handle<backend::HwBufferObject> mUboHandle;
+        const backend::Handle<backend::HwBufferObject> mInstancedUboHandle;
         const backend::PolygonOffset mPolygonOffset;
-        const bool mPolygonOffsetOverride;
+        const backend::Viewport mScissor;
+        const bool mPolygonOffsetOverride : 1;
+        const bool mScissorOverride : 1;
 
         Executor(RenderPass const* pass, Command const* b, Command const* e) noexcept;
 
         void recordDriverCommands(FEngine& engine, backend::DriverApi& driver,
-                const Command* first, const Command* last,
-                FScene::RenderableSoa const& soa, uint16_t readOnlyDepthStencil) const noexcept;
+                const Command* first, const Command* last, uint16_t readOnlyDepthStencil) const noexcept;
 
     public:
         Executor(Executor const& rhs);
         ~Executor() noexcept;
         void execute(const char* name,
                 backend::Handle<backend::HwRenderTarget> renderTarget,
-                backend::RenderPassParams params) const noexcept;
+                backend::RenderPassParams const& params) const noexcept;
     };
 
     // returns a new executor for this pass
@@ -356,6 +372,7 @@ private:
 
     Command* append(size_t count) noexcept;
     void resize(size_t count) noexcept;
+    void instanceify() noexcept;
 
     // on 64-bits systems, we process batches of 256 (64 bytes) cache-lines, or 512 (32 bytes) commands
     // on 32-bits systems, we process batches of 512 (32 bytes) cache-lines, or 512 (32 bytes) commands
@@ -378,7 +395,7 @@ private:
             Variant variant, RenderFlags renderFlags, FScene::VisibleMaskType visibilityMask,
             math::float3 cameraPosition, math::float3 cameraForward) noexcept;
 
-    static void setupColorCommand(Command& cmdDraw,
+    static void setupColorCommand(Command& cmdDraw, Variant variant,
             FMaterialInstance const* mi, bool inverseFrontFaces) noexcept;
 
     static void updateSummedPrimitiveCounts(
@@ -404,9 +421,11 @@ private:
 
     // the UBO containing the data for the renderables
     backend::Handle<backend::HwBufferObject> mUboHandle;
+    backend::Handle<backend::HwBufferObject> mInstancedUboHandle;
 
     // info about the camera
-    CameraInfo mCamera;
+    math::float3 mCameraPosition{};
+    math::float3 mCameraForwardVector{};
 
     // info about the scene features (e.g.: has shadows, lighting, etc...)
     RenderFlags mFlags{};
@@ -420,8 +439,14 @@ private:
     // whether to override the polygon offset setting
     bool mPolygonOffsetOverride = false;
 
+    // whether to override the polygon offset setting
+    bool mScissorOverride = false;
+
     // value of the override
     backend::PolygonOffset mPolygonOffset{};
+
+    // value of scissor override
+    backend::Viewport mScissor{};
 
     // a vector for our custom commands
     mutable Executor::CustomCommandVector mCustomCommands;

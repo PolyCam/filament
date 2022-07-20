@@ -20,7 +20,7 @@
 
 #include <algorithm>
 
-using namespace gltfio;
+using namespace filament::gltfio;
 using namespace utils;
 
 extern "C" JNIEXPORT jint JNICALL
@@ -53,4 +53,11 @@ Java_com_google_android_filament_gltfio_FilamentInstance_nGetAnimator(JNIEnv* , 
         jlong nativeInstance) {
     FilamentInstance* instance = (FilamentInstance*) nativeInstance;
     return (jlong) instance->getAnimator();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentInstance_nApplyMaterialVariant(JNIEnv* env, jclass,
+        jlong nativeInstance, jint variantIndex) {
+    FilamentInstance* instance = (FilamentInstance*) nativeInstance;
+    instance->applyMaterialVariant(variantIndex);
 }

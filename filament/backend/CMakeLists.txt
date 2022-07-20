@@ -13,7 +13,6 @@ set(PUBLIC_HDRS
         include/backend/CallbackHandler.h
         include/backend/DriverEnums.h
         include/backend/Handle.h
-        include/backend/ShaderStageFlags.h
         include/backend/PipelineState.h
         include/backend/PixelBufferDescriptor.h
         include/backend/Platform.h
@@ -43,6 +42,7 @@ set(PRIVATE_HDRS
         include/private/backend/CircularBuffer.h
         include/private/backend/CommandBufferQueue.h
         include/private/backend/CommandStream.h
+        include/private/backend/Dispatcher.h
         include/private/backend/Driver.h
         include/private/backend/DriverApi.h
         include/private/backend/DriverAPI.inc
@@ -65,8 +65,6 @@ if (FILAMENT_SUPPORTS_OPENGL AND NOT FILAMENT_USE_EXTERNAL_GLES3 AND NOT FILAMEN
             src/opengl/gl_headers.h
             src/opengl/GLUtils.cpp
             src/opengl/GLUtils.h
-            src/opengl/OpenGLBlitter.cpp
-            src/opengl/OpenGLBlitter.h
             src/opengl/OpenGLContext.cpp
             src/opengl/OpenGLContext.h
             src/opengl/OpenGLDriver.cpp
@@ -75,8 +73,8 @@ if (FILAMENT_SUPPORTS_OPENGL AND NOT FILAMENT_USE_EXTERNAL_GLES3 AND NOT FILAMEN
             src/opengl/OpenGLProgram.cpp
             src/opengl/OpenGLProgram.h
             src/opengl/OpenGLPlatform.cpp
-            src/opengl/TimerQuery.cpp
-            src/opengl/TimerQuery.h
+            src/opengl/OpenGLTimerQuery.cpp
+            src/opengl/OpenGLTimerQuery.h
             include/private/backend/OpenGLPlatform.h
     )
     if (EGL)
@@ -89,7 +87,6 @@ if (FILAMENT_SUPPORTS_OPENGL AND NOT FILAMENT_USE_EXTERNAL_GLES3 AND NOT FILAMEN
     endif ()
     if (ANDROID)
         list(APPEND SRCS src/opengl/platforms/ExternalStreamManagerAndroid.cpp)
-        list(APPEND SRCS src/android/ExternalTextureManagerAndroid.cpp)
         list(APPEND SRCS src/opengl/platforms/PlatformEGLAndroid.cpp)
     elseif (IOS)
         list(APPEND SRCS src/opengl/platforms/PlatformCocoaTouchGL.mm)
@@ -101,6 +98,8 @@ if (FILAMENT_SUPPORTS_OPENGL AND NOT FILAMENT_USE_EXTERNAL_GLES3 AND NOT FILAMEN
     elseif (LINUX)
         if (FILAMENT_SUPPORTS_X11)
             list(APPEND SRCS src/opengl/platforms/PlatformGLX.cpp)
+        elseif (FILAMENT_SUPPORTS_EGL_ON_LINUX)
+            list(APPEND SRCS src/opengl/platforms/PlatformEGLHeadless.cpp)
         endif()
     elseif (WIN32)
         list(APPEND SRCS src/opengl/platforms/PlatformWGL.cpp)
@@ -307,6 +306,9 @@ endif()
 
 if (LINUX)
     target_link_libraries(${TARGET} PRIVATE dl)
+    if(FILAMENT_SUPPORTS_EGL_ON_LINUX)
+       target_link_libraries(${TARGET} PUBLIC EGL)
+    endif()
 endif()
 
 # ==================================================================================================
@@ -392,6 +394,8 @@ if (APPLE)
         test/test_MRT.cpp
         test/test_LoadImage.cpp
         test/test_RenderExternalImage.cpp
+        test/test_StencilBuffer.cpp
+        test/test_Scissor.cpp
         )
 
     target_link_libraries(backend_test PRIVATE
@@ -440,16 +444,3 @@ if (APPLE AND NOT IOS)
     target_link_libraries(backend_test_mac PRIVATE -force_load backend_test)
 endif()
 
-if (APPLE AND NOT Vulkan_LIBRARY AND NOT FILAMENT_USE_SWIFTSHADER)
-    message(STATUS "No Vulkan SDK was found, using prebuilt MoltenVK.")
-    set(MOLTENVK_DIR "../../third_party/moltenvk")
-    configure_file(
-            ${MOLTENVK_DIR}/libvulkan.1.dylib
-            ${PROJECT_BINARY_DIR}/libvulkan.1.dylib COPYONLY)
-    configure_file(
-            ${MOLTENVK_DIR}/MoltenVK_icd.json
-            ${PROJECT_BINARY_DIR}/MoltenVK_icd.json COPYONLY)
-    configure_file(
-            ${MOLTENVK_DIR}/libMoltenVK.dylib
-            ${PROJECT_BINARY_DIR}/libMoltenVK.dylib COPYONLY)
-endif()

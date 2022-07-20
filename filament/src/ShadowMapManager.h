@@ -29,7 +29,6 @@
 
 #include <private/backend/DriverApi.h>
 #include <private/backend/DriverApiForward.h>
-#include <private/backend/SamplerGroup.h>
 
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
@@ -40,13 +39,11 @@
 
 #include <array>
 #include <memory>
-#include <vector>
 
 namespace filament {
 
 class FView;
 class FrameGraph;
-class ShadowMap;
 class RenderPass;
 
 struct ShadowMappingUniforms {
@@ -74,6 +71,8 @@ public:
     explicit ShadowMapManager(FEngine& engine);
     ~ShadowMapManager();
 
+    void terminate(FEngine& engine);
+
     // Reset shadow map layout.
     void reset() noexcept;
 
@@ -82,12 +81,12 @@ public:
 
     // Updates all of the shadow maps and performs culling.
     // Returns true if any of the shadow maps have visible shadows.
-    ShadowTechnique update(FEngine& engine, FView& view,
-            TypedUniformBuffer<ShadowUib>& shadowUb,
+    ShadowMapManager::ShadowTechnique update(FEngine& engine, FView& view,
+            CameraInfo const& cameraInfo,
             FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept;
 
-    // Renders all of the shadow maps.
-    void render(FrameGraph& fg, FEngine& engine, backend::DriverApi& driver,
+    // Renders all the shadow maps.
+    FrameGraphId<FrameGraphTexture> render(FrameGraph& fg, FEngine& engine,
             RenderPass const& pass, FView& view) noexcept;
 
     ShadowMap* getCascadeShadowMap(size_t cascade) noexcept {
@@ -101,7 +100,8 @@ public:
 
     ShadowMap* getSpotShadowMap(size_t spot) noexcept {
         assert_invariant(spot < CONFIG_MAX_SHADOW_CASTING_SPOTS);
-        return std::launder(reinterpret_cast<ShadowMap*>(&mShadowMapCache[CONFIG_MAX_SHADOW_CASCADES + spot]));
+        return std::launder(reinterpret_cast<ShadowMap*>(
+                &mShadowMapCache[CONFIG_MAX_SHADOW_CASCADES + spot]));
     }
 
     ShadowMap const* getSpotShadowMap(size_t spot) const noexcept {
@@ -113,14 +113,18 @@ public:
         return mShadowMappingUniforms;
     }
 
-private:
-    ShadowTechnique updateCascadeShadowMaps(FEngine& engine,
-            FView& view, FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData,
-            ShadowMap::SceneInfo& sceneInfo) noexcept;
+    auto& getShadowUniforms() const { return mShadowUb; }
 
-    ShadowTechnique updateSpotShadowMaps(FEngine& engine,
-            FView& view, FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData,
-            ShadowMap::SceneInfo& sceneInfo, TypedUniformBuffer<ShadowUib>& shadowUb) noexcept;
+    auto& getShadowUniformsHandle() const { return mShadowUbh; }
+
+private:
+    ShadowMapManager::ShadowTechnique updateCascadeShadowMaps(FEngine& engine,
+            FView& view, CameraInfo const& cameraInfo, FScene::RenderableSoa& renderableData,
+            FScene::LightSoa& lightData, ShadowMap::SceneInfo& sceneInfo) noexcept;
+
+    ShadowMapManager::ShadowTechnique updateSpotShadowMaps(FEngine& engine,
+            FView& view, CameraInfo const& cameraInfo, FScene::RenderableSoa& renderableData,
+            FScene::LightSoa& lightData, ShadowMap::SceneInfo& sceneInfo) noexcept;
 
     void calculateTextureRequirements(FEngine& engine, FView& view, FScene::LightSoa& lightData) noexcept;
 
@@ -204,6 +208,9 @@ private:
     // TODO: make it an option.
     // TODO: iOS does not support the DEPTH16 texture format.
     backend::TextureFormat mTextureFormat = backend::TextureFormat::DEPTH16;
+
+    mutable TypedUniformBuffer<ShadowUib> mShadowUb;
+    backend::Handle<backend::HwBufferObject> mShadowUbh;
 
     ShadowMappingUniforms mShadowMappingUniforms;
 

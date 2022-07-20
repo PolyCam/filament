@@ -286,7 +286,9 @@ FMaterial::FMaterial(FEngine& engine, const Material::Builder& builder)
         for (Variant::type_t k = 0, n = VARIANT_COUNT; k < n; ++k) {
             const Variant variant(k);
             if (Variant::isValidDepthVariant(variant)) {
-                cachedPrograms[k] = engine.getDefaultMaterial()->getProgram(variant);
+                FMaterial const* const pMaterial = engine.getDefaultMaterial();
+                pMaterial->prepareProgram(variant);
+                cachedPrograms[k] = pMaterial->getProgram(variant);
             }
         }
     }
@@ -344,17 +346,19 @@ UniformInterfaceBlock::UniformInfo const* FMaterial::reflect(
     return mUniformInterfaceBlock.getUniformInfo(name.c_str());
 }
 
-Handle<HwProgram> FMaterial::getProgramSlow(Variant variant) const noexcept {
+void FMaterial::prepareProgramSlow(Variant variant) const noexcept {
     switch (getMaterialDomain()) {
         case MaterialDomain::SURFACE:
-            return getSurfaceProgramSlow(variant);
+            getSurfaceProgramSlow(variant);
+            break;
 
         case MaterialDomain::POST_PROCESS:
-            return getPostProcessProgramSlow(variant);
+            getPostProcessProgramSlow(variant);
+            break;
     }
 }
 
-Handle<HwProgram> FMaterial::getSurfaceProgramSlow(Variant variant) const noexcept {
+void FMaterial::getSurfaceProgramSlow(Variant variant) const noexcept {
     // filterVariant() has already been applied in generateCommands(), shouldn't be needed here
     // if we're unlit, we don't have any bits that correspond to lit materials
     assert_invariant(variant == Variant::filterVariant(variant, isVariantLit()) );
@@ -374,7 +378,7 @@ Handle<HwProgram> FMaterial::getSurfaceProgramSlow(Variant variant) const noexce
         .setUniformBlock(BindingPoints::PER_MATERIAL_INSTANCE, mUniformInterfaceBlock.getName());
 
     if (Variant(variant).hasSkinningOrMorphing()) {
-        pb.setUniformBlock(BindingPoints::PER_RENDERABLE_BONES, PerRenderableUibBone::_name);
+        pb.setUniformBlock(BindingPoints::PER_RENDERABLE_BONES, PerRenderableBoneUib::_name);
         pb.setUniformBlock(BindingPoints::PER_RENDERABLE_MORPHING, PerRenderableMorphingUib::_name);
     }
 
@@ -387,12 +391,10 @@ Handle<HwProgram> FMaterial::getSurfaceProgramSlow(Variant variant) const noexce
     addSamplerGroup(pb, BindingPoints::PER_MATERIAL_INSTANCE, mSamplerInterfaceBlock, mSamplerBindings);
 
     // getSurfaceBindingIndexMap in GLSLPostProcessor.cpp also needs to update if sampler groups are added.
-
-    return createAndCacheProgram(std::move(pb), variant);
+    createAndCacheProgram(std::move(pb), variant);
 }
 
-Handle<HwProgram> FMaterial::getPostProcessProgramSlow(Variant variant)
-    const noexcept {
+void FMaterial::getPostProcessProgramSlow(Variant variant) const noexcept {
 
     Program pb = getProgramBuilderWithVariants(variant, variant, variant);
     pb.setUniformBlock(BindingPoints::PER_VIEW, PerViewUib::_name)
@@ -401,8 +403,7 @@ Handle<HwProgram> FMaterial::getPostProcessProgramSlow(Variant variant)
     addSamplerGroup(pb, BindingPoints::PER_MATERIAL_INSTANCE, mSamplerInterfaceBlock, mSamplerBindings);
 
     // getPostProcessBindingIndexMap in GLSLPostProcessor.cpp also needs to update if sampler groups are added.
-
-    return createAndCacheProgram(std::move(pb), variant);
+    createAndCacheProgram(std::move(pb), variant);
 }
 
 Program FMaterial::getProgramBuilderWithVariants(
@@ -416,7 +417,7 @@ Program FMaterial::getProgramBuilderWithVariants(
      * Vertex shader
      */
 
-    filaflat::ShaderBuilder& vsBuilder = mEngine.getVertexShaderBuilder();
+    ShaderContent& vsBuilder = mEngine.getVertexShaderContent();
 
     UTILS_UNUSED_IN_RELEASE bool vsOK = mMaterialParser->getShader(vsBuilder, sm,
             vertexVariant, ShaderType::VERTEX);
@@ -430,7 +431,7 @@ Program FMaterial::getProgramBuilderWithVariants(
      * Fragment shader
      */
 
-    filaflat::ShaderBuilder& fsBuilder = mEngine.getFragmentShaderBuilder();
+    ShaderContent& fsBuilder = mEngine.getFragmentShaderContent();
 
     UTILS_UNUSED_IN_RELEASE bool fsOK = mMaterialParser->getShader(fsBuilder, sm,
             fragmentVariant, ShaderType::FRAGMENT);
@@ -451,12 +452,10 @@ Program FMaterial::getProgramBuilderWithVariants(
     return pb;
 }
 
-Handle<HwProgram> FMaterial::createAndCacheProgram(Program&& p, Variant variant) const noexcept {
+void FMaterial::createAndCacheProgram(Program&& p, Variant variant) const noexcept {
     auto program = mEngine.getDriverApi().createProgram(std::move(p));
     assert_invariant(program);
-
     mCachedPrograms[variant.key] = program;
-    return program;
 }
 
 size_t FMaterial::getParameters(ParameterInfo* parameters, size_t count) const noexcept {
@@ -464,7 +463,7 @@ size_t FMaterial::getParameters(ParameterInfo* parameters, size_t count) const n
 
     const auto& uniforms = mUniformInterfaceBlock.getUniformInfoList();
     size_t i = 0;
-    size_t uniformCount = std::min(count, uniforms.size());
+    size_t uniformCount = std::min(count, size_t(uniforms.size()));
     for ( ; i < uniformCount; i++) {
         ParameterInfo& info = parameters[i];
         const auto& uniformInfo = uniforms[i];
@@ -472,7 +471,7 @@ size_t FMaterial::getParameters(ParameterInfo* parameters, size_t count) const n
         info.isSampler = false;
         info.isSubpass = false;
         info.type = uniformInfo.type;
-        info.count = uniformInfo.size;
+        info.count = std::max(1u, uniformInfo.size);
         info.precision = uniformInfo.precision;
     }
 
@@ -526,6 +525,8 @@ void FMaterial::applyPendingEdits() noexcept {
  * @{
  */
 
+#if FILAMENT_ENABLE_MATDBG
+
 void FMaterial::onEditCallback(void* userdata, const utils::CString& name, const void* packageData,
         size_t packageSize) {
     FMaterial* material = upcast((Material*) userdata);
@@ -537,14 +538,14 @@ void FMaterial::onEditCallback(void* userdata, const utils::CString& name, const
 }
 
 void FMaterial::onQueryCallback(void* userdata, VariantList* pVariants) {
-#if FILAMENT_ENABLE_MATDBG
     FMaterial* material = upcast((Material*) userdata);
     *pVariants = material->mActivePrograms;
     material->mActivePrograms.reset();
-#endif
 }
 
- /** @}*/
+#endif
+
+/** @}*/
 
 void FMaterial::destroyPrograms(FEngine& engine) {
     DriverApi& driverApi = engine.getDriverApi();

@@ -66,7 +66,7 @@ void reportLastWindowsError() {
 
 } // namespace
 
-namespace filament {
+namespace filament::backend {
 
 using namespace backend;
 
@@ -103,7 +103,6 @@ Driver* PlatformWGL::createDriver(void* const sharedGLContext) noexcept {
     int attribs[] = {
         WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
         WGL_CONTEXT_MINOR_VERSION_ARB, 1,
-        WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_PROFILE_MASK_ARB,
         0
     };
 
@@ -265,8 +264,8 @@ Platform::Fence* PlatformWGL::createFence() noexcept {
 void PlatformWGL::destroyFence(Fence* fence) noexcept {
 }
 
-backend::FenceStatus PlatformWGL::waitFence(Fence* fence, uint64_t timeout) noexcept {
-    return backend::FenceStatus::ERROR;
+FenceStatus PlatformWGL::waitFence(Fence* fence, uint64_t timeout) noexcept {
+    return FenceStatus::ERROR;
 }
 
-} // namespace filament
+} // namespace filament::backend

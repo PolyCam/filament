@@ -31,8 +31,6 @@ namespace backend {
 
 class MetalPlatform;
 
-namespace metal {
-
 class MetalBuffer;
 struct MetalUniformBuffer;
 struct MetalContext;
@@ -44,31 +42,32 @@ struct UniformBufferState;
 #endif
 
 class MetalDriver final : public DriverBase {
-    explicit MetalDriver(backend::MetalPlatform* platform) noexcept;
+    explicit MetalDriver(MetalPlatform* platform) noexcept;
     ~MetalDriver() noexcept override;
+    Dispatcher getDispatcher() const noexcept final;
 
 public:
-    static Driver* create(backend::MetalPlatform* platform);
+    static Driver* create(MetalPlatform* platform);
 
 private:
 
     friend class MetalSwapChain;
 
-    backend::MetalPlatform& mPlatform;
+    MetalPlatform& mPlatform;
 
     MetalContext* mContext;
 
     ShaderModel getShaderModel() const noexcept final;
 
     // Overrides the default implementation by wrapping the call to fn in an @autoreleasepool block.
-    void execute(std::function<void(void)> fn) noexcept final;
+    void execute(std::function<void(void)> const& fn) noexcept final;
 
     /*
      * Driver interface
      */
 
     template<typename T>
-    friend class backend::ConcreteDispatcher;
+    friend class ConcreteDispatcher;
 
 #define DECL_DRIVER_API(methodName, paramsDecl, params) \
     UTILS_ALWAYS_INLINE inline void methodName(paramsDecl);
@@ -86,7 +85,7 @@ private:
      * Memory management
      */
 
-    backend::HandleAllocatorMTL mHandleAllocator;
+    HandleAllocatorMTL mHandleAllocator;
 
     template<typename D>
     Handle<D> alloc_handle() {
@@ -119,6 +118,12 @@ private:
         mHandleAllocator.deallocate(handle, p);
     }
 
+    inline void setRenderPrimitiveBuffer(Handle<HwRenderPrimitive> rph,
+            Handle<HwVertexBuffer> vbh, Handle<HwIndexBuffer> ibh);
+
+    inline void setRenderPrimitiveRange(Handle<HwRenderPrimitive> rph, PrimitiveType pt,
+            uint32_t offset, uint32_t minIndex, uint32_t maxIndex, uint32_t count);
+
     void enumerateSamplerGroups(const MetalProgram* program, ShaderType shaderType,
             const std::function<void(const SamplerGroup::Sampler*, size_t)>& f);
     void enumerateBoundUniformBuffers(const std::function<void(const UniformBufferState&,
@@ -126,7 +131,6 @@ private:
 
 };
 
-} // namespace metal
 } // namespace backend
 } // namespace filament
 

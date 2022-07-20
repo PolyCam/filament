@@ -26,8 +26,7 @@
 
 using namespace bluevk;
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 VulkanTexture::VulkanTexture(VulkanContext& context, VkImage image, VkFormat format, uint8_t samples,
         uint32_t width, uint32_t height, TextureUsage tusage, VulkanStagePool& stagePool) :
@@ -230,6 +229,7 @@ void VulkanTexture::updateImage(const PixelBufferDescriptor& data, uint32_t widt
     // Otherwise, use vkCmdCopyBufferToImage.
     void* mapped = nullptr;
     VulkanStage const* stage = mStagePool.acquireStage(hostData->size);
+    assert_invariant(stage->memory);
     vmaMapMemory(mContext.allocator, stage->memory, &mapped);
     memcpy(mapped, hostData->buffer, hostData->size);
     vmaUnmapMemory(mContext.allocator, stage->memory);
@@ -488,5 +488,4 @@ VkImageLayout VulkanTexture::getVkLayout(uint32_t layer, uint32_t level) const {
     return mSubresourceLayouts.get(key);
 }
 
-} // namespace filament
-} // namespace backend
+} // namespace filament::backend
