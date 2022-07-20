@@ -334,7 +334,7 @@ io::sstream& CodeGenerator::generateUniforms(io::sstream& out, ShaderType shader
         out << "    " << precision;
         if (precision[0] != '\0') out << " ";
         out << type << " " << info.name.c_str();
-        if (info.size > 1) {
+        if (info.size > 0) {
             out << "[" << info.size << "]";
         }
         out << ";\n";
@@ -391,8 +391,7 @@ io::sstream& CodeGenerator::generateSamplers(
     return out;
 }
 
-io::sstream& CodeGenerator::generateSubpass(io::sstream& out,
-        SubpassInfo subpass) {
+io::sstream& CodeGenerator::generateSubpass(io::sstream& out, SubpassInfo subpass) {
     if (!subpass.isValid) {
         return out;
     }
@@ -522,13 +521,23 @@ io::sstream& CodeGenerator::generateQualityDefine(io::sstream& out, ShaderQualit
 }
 
 io::sstream& CodeGenerator::generateCommon(io::sstream& out, ShaderType type) {
-    out << SHADERS_COMMON_MATH_FS_DATA;
-    out << SHADERS_COMMON_SHADOWING_FS_DATA;
+    out << SHADERS_COMMON_MATH_GLSL_DATA;
+    out << SHADERS_COMMON_SHADOWING_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
     } else if (type == ShaderType::FRAGMENT) {
         out << SHADERS_COMMON_SHADING_FS_DATA;
         out << SHADERS_COMMON_GRAPHICS_FS_DATA;
         out << SHADERS_COMMON_MATERIAL_FS_DATA;
+    }
+    return out;
+}
+
+io::sstream& CodeGenerator::generatePostProcessCommon(io::sstream& out, ShaderType type) {
+    out << SHADERS_COMMON_MATH_GLSL_DATA;
+    if (type == ShaderType::VERTEX) {
+    } else if (type == ShaderType::FRAGMENT) {
+        out << SHADERS_COMMON_SHADING_FS_DATA;
+        out << SHADERS_COMMON_GRAPHICS_FS_DATA;
     }
     return out;
 }
@@ -561,15 +570,16 @@ io::sstream& CodeGenerator::generatePostProcessInputs(io::sstream& out, ShaderTy
 
 io::sstream& CodeGenerator::generatePostProcessGetters(io::sstream& out,
         ShaderType type) {
-    out << SHADERS_COMMON_GETTERS_FS_DATA;
+    out << SHADERS_COMMON_GETTERS_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
         out << SHADERS_POST_PROCESS_GETTERS_VS_DATA;
+    } else if (type == ShaderType::FRAGMENT) {
     }
     return out;
 }
 
 io::sstream& CodeGenerator::generateGetters(io::sstream& out, ShaderType type) {
-    out << SHADERS_COMMON_GETTERS_FS_DATA;
+    out << SHADERS_COMMON_GETTERS_GLSL_DATA;
     if (type == ShaderType::VERTEX) {
         out << SHADERS_GETTERS_VS_DATA;
     } else if (type == ShaderType::FRAGMENT) {

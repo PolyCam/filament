@@ -20,7 +20,7 @@
 
 using namespace filament;
 using namespace filament::math;
-using namespace gltfio;
+using namespace filament::gltfio;
 using namespace utils;
 
 extern "C" JNIEXPORT jint JNICALL
@@ -120,10 +120,34 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_gltfio_FilamentAsset_nGetLightEntities(JNIEnv* env, jclass,
         jlong nativeAsset, jintArray result) {
     FilamentAsset* asset = (FilamentAsset*) nativeAsset;
-    jsize available = env->GetArrayLength(result);
+    const jsize available = env->GetArrayLength(result);
+    const size_t minCount = std::min(available, (jsize) asset->getLightEntityCount());
+    if (minCount == 0) {
+        return;
+    }
     Entity* entities = (Entity*) env->GetIntArrayElements(result, nullptr);
-    std::copy_n(asset->getLightEntities(),
-            std::min(available, (jsize) asset->getLightEntityCount()), entities);
+    std::copy_n(asset->getLightEntities(), minCount, entities);
+    env->ReleaseIntArrayElements(result, (jint*) entities, 0);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetRenderableEntityCount(JNIEnv*, jclass,
+        jlong nativeAsset) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    return asset->getRenderableEntityCount();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetRenderableEntities(JNIEnv* env, jclass,
+        jlong nativeAsset, jintArray result) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    const jsize available = env->GetArrayLength(result);
+    const size_t minCount = std::min(available, (jsize) asset->getRenderableEntityCount());
+    if (minCount == 0) {
+        return;
+    }
+    Entity* entities = (Entity*) env->GetIntArrayElements(result, nullptr);
+    std::copy_n(asset->getRenderableEntities(), minCount, entities);
     env->ReleaseIntArrayElements(result, (jint*) entities, 0);
 }
 
@@ -131,10 +155,13 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_gltfio_FilamentAsset_nGetCameraEntities(JNIEnv* env, jclass,
         jlong nativeAsset, jintArray result) {
     FilamentAsset* asset = (FilamentAsset*) nativeAsset;
-    jsize available = env->GetArrayLength(result);
+    const jsize available = env->GetArrayLength(result);
+    const size_t minCount = std::min(available, (jsize) asset->getCameraEntityCount());
+    if (minCount == 0) {
+        return;
+    }
     Entity* entities = (Entity*) env->GetIntArrayElements(result, nullptr);
-    std::copy_n(asset->getCameraEntities(),
-            std::min(available, (jsize) asset->getCameraEntityCount()), entities);
+    std::copy_n(asset->getCameraEntities(), minCount, entities);
     env->ReleaseIntArrayElements(result, (jint*) entities, 0);
 }
 
@@ -201,6 +228,44 @@ Java_com_google_android_filament_gltfio_FilamentAsset_nGetExtras(JNIEnv* env, jc
     return val ? env->NewStringUTF(val) : nullptr;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetSkinCount(JNIEnv* , jclass,
+        jlong nativeAsset) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    return (jint) asset->getSkinCount();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetSkinNames(JNIEnv* env, jclass,
+        jlong nativeAsset, jobjectArray result) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    jsize available = env->GetArrayLength(result);
+    for (int i = 0; i < available; ++i) {
+        const char* name = asset->getSkinNameAt(i);
+        if (name) {
+            env->SetObjectArrayElement(result, (jsize) i, env->NewStringUTF(name));
+        }
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetJointCountAt(JNIEnv* , jclass,
+        jlong nativeAsset, jint skinIndex) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    return (jint) asset->getJointCountAt(skinIndex);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetJointsAt(JNIEnv* env, jclass,
+        jlong nativeAsset, jint skinIndex, jintArray result) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    jsize available = env->GetArrayLength(result);
+    Entity* entities = (Entity*) env->GetIntArrayElements(result, nullptr);
+    std::copy_n(asset->getJointsAt(skinIndex),
+        std::min(available, (jsize) asset->getJointCountAt(skinIndex)), entities);
+    env->ReleaseIntArrayElements(result, (jint*) entities, 0);
+}
+
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_google_android_filament_gltfio_FilamentAsset_nGetAnimator(JNIEnv* , jclass,
         jlong nativeAsset) {
@@ -215,15 +280,6 @@ Java_com_google_android_filament_gltfio_FilamentAsset_nGetResourceUriCount(JNIEn
     return (jint) asset->getResourceUriCount();
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_google_android_filament_gltfio_FilamentAsset_nGetMorphTargetNameAt(JNIEnv* env, jclass,
-        jlong nativeAsset, jint entityId, jint targetIndex) {
-    Entity entity = Entity::import(entityId);
-    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
-    const char* val = asset->getMorphTargetNameAt(entity, (size_t) targetIndex);
-    return val ? env->NewStringUTF(val) : nullptr;
-}
-
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_gltfio_FilamentAsset_nGetResourceUris(JNIEnv* env, jclass,
                                                                        jlong nativeAsset,
@@ -235,9 +291,68 @@ Java_com_google_android_filament_gltfio_FilamentAsset_nGetResourceUris(JNIEnv* e
     }
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetMorphTargetCount(JNIEnv*, jclass,
+        jlong nativeAsset, jint entityId) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    Entity entity = Entity::import(entityId);
+    return (jint) asset->getMorphTargetCountAt(entity);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetMorphTargetNames(JNIEnv* env, jclass,
+        jlong nativeAsset, jint entityId, jobjectArray result) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    Entity entity = Entity::import(entityId);
+    for (int i = 0, n = asset->getMorphTargetCountAt(entity); i < n; ++i) {
+        const char* name = asset->getMorphTargetNameAt(entity, i);
+        env->SetObjectArrayElement(result, (jsize) i, env->NewStringUTF(name));
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetMaterialVariantCount(JNIEnv*, jclass,
+        jlong nativeAsset) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    return (jint) asset->getMaterialVariantCount();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nGetMaterialVariantNames(JNIEnv* env, jclass,
+        jlong nativeAsset, jobjectArray result) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    for (int i = 0; i < asset->getMaterialVariantCount(); ++i) {
+        const char* name = asset->getMaterialVariantName(i);
+        env->SetObjectArrayElement(result, (jsize) i, env->NewStringUTF(name));
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nApplyMaterialVariant(JNIEnv* env, jclass,
+        jlong nativeAsset, jint variantIndex) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    asset->applyMaterialVariant(variantIndex);
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_google_android_filament_gltfio_FilamentAsset_nReleaseSourceData(JNIEnv* env, jclass,
         jlong nativeAsset) {
     FilamentAsset* asset = (FilamentAsset*) nativeAsset;
     asset->releaseSourceData();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nAttachSkin(JNIEnv* env, jclass,
+        jlong nativeAsset, jint skinIndex, jint targetEntity) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    Entity target = Entity::import(targetEntity);
+    asset->attachSkin(skinIndex, target);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_google_android_filament_gltfio_FilamentAsset_nDetachSkin(JNIEnv* env, jclass,
+        jlong nativeAsset, jint skinIndex, jint targetEntity) {
+    FilamentAsset* asset = (FilamentAsset*) nativeAsset;
+    Entity target = Entity::import(targetEntity);
+    asset->detachSkin(skinIndex, target);
 }

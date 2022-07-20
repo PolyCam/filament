@@ -30,47 +30,46 @@
 #include <set>
 #include <utility>
 
-namespace filament {
+namespace filament::backend {
 
 class OpenGLContext {
 public:
-    static constexpr const size_t MAX_TEXTURE_UNIT_COUNT = backend::MAX_SAMPLER_COUNT;
+    static constexpr const size_t MAX_TEXTURE_UNIT_COUNT = MAX_SAMPLER_COUNT;
     static constexpr const size_t MAX_BUFFER_BINDINGS = 32;
     typedef math::details::TVec4<GLint> vec4gli;
     typedef math::details::TVec2<GLclampf> vec2glf;
 
-    // TODO: the footprint of this structure can be reduced. We need only 1 bit for index type, 16
-    // bits for vertexAttribArray. We can also use fewer bits for vertexBufferVersion, although
-    // this will require a corollary update in OpenGLDriver::setVertexBufferObject().
     struct RenderPrimitive {
-        GLuint vao = 0;
-        GLenum indicesType = GL_UNSIGNED_INT;
-        GLuint elementArray = 0;
-        utils::bitset32 vertexAttribArray;
+        static_assert(MAX_VERTEX_ATTRIBUTE_COUNT <= 16);
+
+        GLuint vao = 0;                                         // 4
+        GLuint elementArray = 0;                                // 4
+        utils::bitset<uint16_t> vertexAttribArray;              // 2
+
+        // If this version number does not match vertexBufferWithObjects->bufferObjectsVersion,
+        // then the VAO needs to be updated.
+        uint8_t vertexBufferVersion = 0;                        // 1
+        uint8_t indicesSize = 0;                                // 1
 
         // The optional 32-bit handle to a GLVertexBuffer is necessary only if the referenced
         // VertexBuffer supports buffer objects. If this is zero, then the VBO handles array is
         // immutable.
-        backend::Handle<backend::HwVertexBuffer> vertexBufferWithObjects = {};
+        Handle<HwVertexBuffer> vertexBufferWithObjects = {};    // 4
 
-        // If this version number does not match vertexBufferWithObjects->bufferObjectsVersion,
-        // then the VAO needs to be updated.
-        uint8_t vertexBufferVersion = 0;
+        GLenum getIndicesType() const noexcept {
+            return indicesSize == 4 ? GL_UNSIGNED_INT : GL_UNSIGNED_SHORT;
+        }
     } gl;
 
-    OpenGLContext() noexcept;
+    static bool queryOpenGLVersion(GLint* major, GLint* minor) noexcept;
 
-    // this is chosen to minimize code size
-    using ExtentionSet = std::set<utils::StaticString>;
-    static bool hasExtension(ExtentionSet const& exts, utils::StaticString ext) noexcept;
-    void initExtensionsGLES(GLint major, GLint minor, ExtentionSet const& extensionsMap);
-    void initExtensionsGL(GLint major, GLint minor, ExtentionSet const& extensionsMap);
+    OpenGLContext() noexcept;
 
     constexpr static inline size_t getIndexForTextureTarget(GLuint target) noexcept;
     constexpr        inline size_t getIndexForCap(GLenum cap) noexcept;
     constexpr static inline size_t getIndexForBufferTarget(GLenum target) noexcept;
 
-    backend::ShaderModel getShaderModel() const noexcept { return mShaderModel; }
+    ShaderModel getShaderModel() const noexcept { return mShaderModel; }
 
 
     inline void useProgram(GLuint program) noexcept;
@@ -102,17 +101,20 @@ public:
     inline void colorMask(GLboolean flag) noexcept;
     inline void depthMask(GLboolean flag) noexcept;
     inline void depthFunc(GLenum func) noexcept;
+    inline void stencilFunc(GLenum func, GLint ref, GLuint mask) noexcept;
+    inline void stencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) noexcept;
+    inline void stencilMask(GLuint mask) noexcept;
     inline void polygonOffset(GLfloat factor, GLfloat units) noexcept;
     inline void beginQuery(GLenum target, GLuint query) noexcept;
     inline void endQuery(GLenum target) noexcept;
-    inline GLuint getQuery(GLenum target) noexcept;
+    inline GLuint getQuery(GLenum target) const noexcept;
 
     inline void setScissor(GLint left, GLint bottom, GLsizei width, GLsizei height) noexcept;
     inline void viewport(GLint left, GLint bottom, GLsizei width, GLsizei height) noexcept;
     inline void depthRange(GLclampf near, GLclampf far) noexcept;
 
     void deleteBuffers(GLsizei n, const GLuint* buffers, GLenum target) noexcept;
-    void deleteVextexArrays(GLsizei n, const GLuint* arrays) noexcept;
+    void deleteVertexArrays(GLsizei n, const GLuint* arrays) noexcept;
 
     // glGet*() values
     struct {
@@ -205,6 +207,19 @@ public:
         bool allow_read_only_ancillary_feedback_loop = false;
     } bugs;
 
+    // state getters -- as needed.
+    vec4gli const& getViewport() const { return state.window.viewport; }
+
+    // function to handle state changes we don't control
+    void updateTexImage(GLenum target, GLuint id) noexcept {
+        const size_t index = getIndexForTextureTarget(target);
+        state.textures.units[state.textures.active].targets[index].texture_id = id;
+    }
+    void resetProgram() noexcept { state.program.use = 0; }
+
+private:
+    ShaderModel mShaderModel = ShaderModel::UNKNOWN;
+
     const std::array<std::tuple<bool const&, char const*, char const*>, sizeof(bugs)> mBugDatabase{{
             {   bugs.disable_glFlush,
                     "disable_glFlush",
@@ -244,22 +259,16 @@ public:
                     ""},
     }};
 
-    // state getters -- as needed.
-    GLuint getDrawFbo() const noexcept { return state.draw_fbo; }
-    vec4gli const& getViewport() const { return state.window.viewport; }
-
-    // function to handle state changes we don't control
-    void updateTexImage(GLenum target, GLuint id) noexcept {
-        const size_t index = getIndexForTextureTarget(target);
-        state.textures.units[state.textures.active].targets[index].texture_id = id;
-    }
-    void resetProgram() noexcept { state.program.use = 0; }
-
-private:
-    backend::ShaderModel mShaderModel;
-
     // Try to keep the State structure sorted by data-access patterns
     struct State {
+        GLint major = 0;
+        GLint minor = 0;
+
+        char const* vendor = nullptr;
+        char const* renderer = nullptr;
+        char const* version = nullptr;
+        char const* shader = nullptr;
+
         GLuint draw_fbo = 0;
         GLuint read_fbo = 0;
 
@@ -283,6 +292,23 @@ private:
             GLboolean colorMask         = GL_TRUE;
             GLboolean depthMask         = GL_TRUE;
             GLenum depthFunc            = GL_LESS;
+            struct StencilFunc {
+                GLenum func             = GL_ALWAYS;
+                GLint ref               = 0;
+                GLuint mask             = ~GLuint(0);
+                bool operator != (StencilFunc const& rhs) const noexcept {
+                    return func != rhs.func || ref != rhs.ref || mask != rhs.mask;
+                }
+            } stencilFunc;
+            struct StencilOp {
+                GLenum sfail            = GL_KEEP;
+                GLenum dpfail           = GL_KEEP;
+                GLenum dppass           = GL_KEEP;
+                bool operator != (StencilOp const& rhs) const noexcept {
+                    return sfail != rhs.sfail || dpfail != rhs.dpfail || dppass != rhs.dppass;
+                }
+            } stencilOp;
+            GLuint stencilMask          = ~GLuint(0);
         } raster;
 
         struct PolygonOffset {
@@ -345,6 +371,10 @@ private:
 
     RenderPrimitive mDefaultVAO;
 
+    // this is chosen to minimize code size
+    void initExtensionsGLES() noexcept;
+    void initExtensionsGL() noexcept;
+
     template <typename T, typename F>
     static inline void update_state(T& state, T const& expected, F functor, bool force = false) noexcept {
         if (UTILS_UNLIKELY(force || state != expected)) {
@@ -390,7 +420,7 @@ constexpr size_t OpenGLContext::getIndexForCap(GLenum cap) noexcept { //NOLINT
 #ifdef GL_ARB_seamless_cube_map
         case GL_TEXTURE_CUBE_MAP_SEAMLESS:      index = 11; break;
 #endif
-#if GL41_HEADERS
+#if BACKEND_OPENGL_VERSION == BACKEND_OPENGL_VERSION_GL
         case GL_PROGRAM_POINT_SIZE:             index = 12; break;
 #endif
         default: index = 13; break; // should never happen
@@ -624,6 +654,27 @@ void OpenGLContext::depthFunc(GLenum func) noexcept {
     });
 }
 
+void OpenGLContext::stencilFunc(GLenum func, GLint ref, GLuint mask) noexcept {
+    // WARNING: don't call this without updating mRasterState
+    update_state(state.raster.stencilFunc, {func, ref, mask}, [&]() {
+        glStencilFunc(func, ref, mask);
+    });
+}
+
+void OpenGLContext::stencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) noexcept {
+    // WARNING: don't call this without updating mRasterState
+    update_state(state.raster.stencilOp, {sfail, dpfail, dppass}, [&]() {
+        glStencilOp(sfail, dpfail, dppass);
+    });
+}
+
+void OpenGLContext::stencilMask(GLuint mask) noexcept {
+    // WARNING: don't call this without updating mRasterState
+    update_state(state.raster.stencilMask, mask, [&]() {
+        glStencilMask(mask);
+    });
+}
+
 void OpenGLContext::polygonOffset(GLfloat factor, GLfloat units) noexcept {
     update_state(state.polygonOffset, { factor, units }, [&]() {
         if (factor != 0 || units != 0) {
@@ -661,7 +712,7 @@ void OpenGLContext::endQuery(GLenum target) noexcept {
     glEndQuery(target);
 }
 
-GLuint OpenGLContext::getQuery(GLenum target) noexcept {
+GLuint OpenGLContext::getQuery(GLenum target) const noexcept {
     switch (target) {
         case GL_TIME_ELAPSED:
             return state.queries.timer;
@@ -669,6 +720,6 @@ GLuint OpenGLContext::getQuery(GLenum target) noexcept {
             return 0;
     }
 }
-} // namesapce filament
+} // namespace filament
 
 #endif //TNT_FILAMENT_BACKEND_OPENGLCONTEXT_H

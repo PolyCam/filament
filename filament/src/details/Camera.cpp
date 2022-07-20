@@ -48,7 +48,7 @@ FCamera::FCamera(FEngine& engine, Entity e)
 }
 
 void UTILS_NOINLINE FCamera::setProjection(double fovInDegrees, double aspect, double near, double far,
-        Camera::Fov direction) noexcept {
+        Camera::Fov direction) {
     double w;
     double h;
     double s = std::tan(fovInDegrees * math::d::DEG_TO_RAD / 2.0) * near;
@@ -63,7 +63,7 @@ void UTILS_NOINLINE FCamera::setProjection(double fovInDegrees, double aspect, d
 }
 
 void FCamera::setLensProjection(double focalLengthInMillimeters,
-        double aspect, double near, double far) noexcept {
+        double aspect, double near, double far) {
     // a 35mm camera has a 36x24mm wide frame size
     double h = (0.5 * near) * ((SENSOR_SIZE * 1000.0) / focalLengthInMillimeters);
     double w = h * aspect;
@@ -82,31 +82,25 @@ void UTILS_NOINLINE FCamera::setCustomProjection(mat4 const& p,
         mat4 const& c, double near, double far) noexcept {
     mProjection = p;
     mProjectionForCulling = c;
-    mNear = (float)near;
-    mFar = (float)far;
+    mNear = near;
+    mFar = far;
 }
 
 void UTILS_NOINLINE FCamera::setProjection(Camera::Projection projection,
         double left, double right,
         double bottom, double top,
-        double near, double far) noexcept {
+        double near, double far) {
 
-    // we make sure our preconditions are verified, using default values,
-    // to avoid inconsistent states in the renderer later.
-    if (UTILS_UNLIKELY(left == right ||
-                       bottom == top ||
-                       (projection == Projection::PERSPECTIVE && (near <= 0 || far <= near)) ||
-                       (projection == Projection::ORTHO && (near == far)))) {
-        PANIC_LOG("Camera preconditions not met. Using default projection.");
-        left = -0.1;
-        right = 0.1;
-        bottom = -0.1;
-        top = 0.1;
-        near = 0.1;
-        far = 100.0;
-    }
+    ASSERT_PRECONDITION(!(
+            left == right ||
+            bottom == top ||
+            (projection == Projection::PERSPECTIVE && (near <= 0 || far <= near)) ||
+            (projection == Projection::ORTHO && (near == far))),
+            "Camera preconditions not met in setProjection(%s, %f, %f, %f, %f, %f, %f)",
+            projection == Camera::Projection::PERSPECTIVE ? "PERSPECTIVE" : "ORTHO",
+            left, right, bottom, top, near, far);
 
-    mat4 p;
+    mat4 c, p;
     switch (projection) {
         case Projection::PERSPECTIVE:
             /*
@@ -117,8 +111,8 @@ void UTILS_NOINLINE FCamera::setProjection(Camera::Projection projection,
              *       0        0      F+N/N-F   2*F*N/N-F
              *       0        0        -1           0
              */
-            p = mat4::frustum(left, right, bottom, top, near, far);
-            mProjectionForCulling = p;
+            c = mat4::frustum(left, right, bottom, top, near, far);
+            p = c;
 
             /*
              * but we're using a far plane at infinity
@@ -141,13 +135,11 @@ void UTILS_NOINLINE FCamera::setProjection(Camera::Projection projection,
              *       0       0       -2/F-N    - F+N/F-N
              *       0       0         0            1
              */
-            p = mat4::ortho(left, right, bottom, top, near, far);
-            mProjectionForCulling = p;
+            c = mat4::ortho(left, right, bottom, top, near, far);
+            p = c;
             break;
     }
-    mProjection = p;
-    mNear = float(near);
-    mFar = float(far);
+    FCamera::setCustomProjection(p, c, near, far);
 }
 
 math::mat4 FCamera::getProjectionMatrix() const noexcept {
@@ -156,8 +148,8 @@ math::mat4 FCamera::getProjectionMatrix() const noexcept {
     // Note that this math ends up setting the projection matrix' p33 to 0, which is where we're
     // getting back a lot of precision in the depth buffer.
     const mat4 m{ mat4::row_major_init{
-            mScaling.x, 0.0, 0.0, mShiftCS.x,
-            0.0, mScaling.y, 0.0, mShiftCS.y,
+            mScalingCS.x, 0.0, 0.0, mShiftCS.x,
+            0.0, mScalingCS.y, 0.0, mShiftCS.y,
             0.0, 0.0, -0.5, 0.5,    // GL to inverted DX convention
             0.0, 0.0, 0.0, 1.0
     }};
@@ -167,8 +159,8 @@ math::mat4 FCamera::getProjectionMatrix() const noexcept {
 math::mat4 FCamera::getCullingProjectionMatrix() const noexcept {
     // The culling projection matrix stays in the GL convention
     const mat4 m{ mat4::row_major_init{
-            mScaling.x, 0.0, 0.0, mShiftCS.x,
-            0.0, mScaling.y, 0.0, mShiftCS.y,
+            mScalingCS.x, 0.0, 0.0, mShiftCS.x,
+            0.0, mScalingCS.y, 0.0, mShiftCS.y,
             0.0, 0.0, 1.0, 0.0,
             0.0, 0.0, 0.0, 1.0
     }};
@@ -272,10 +264,10 @@ CameraInfo::CameraInfo(FCamera const& camera) noexcept {
     cullingProjection  = mat4f{ camera.getCullingProjectionMatrix() };
     model              = mat4f{ camera.getModelMatrix() };
     view               = mat4f{ camera.getViewMatrix() };
-    zn                 = camera.getNear();
-    zf                 = camera.getCullingFar();
+    zn                 = (float)camera.getNear();
+    zf                 = (float)camera.getCullingFar();
     ev100              = Exposure::ev100(camera);
-    f                  = camera.getFocalLength();
+    f                  = (float)camera.getFocalLength();
     A                  = f / camera.getAperture();
     d                  = std::max(zn, camera.getFocusDistance());
 }
@@ -286,14 +278,13 @@ CameraInfo::CameraInfo(FCamera const& camera, const math::mat4& worldOriginCamer
     cullingProjection  = mat4f{ camera.getCullingProjectionMatrix() };
     model              = mat4f{ modelMatrix };
     view               = mat4f{ inverse(modelMatrix) };
-    zn                 = camera.getNear();
-    zf                 = camera.getCullingFar();
+    worldOrigin        = worldOriginCamera;
+    zn                 = (float)camera.getNear();
+    zf                 = (float)camera.getCullingFar();
     ev100              = Exposure::ev100(camera);
-    f                  = camera.getFocalLength();
+    f                  = (float)camera.getFocalLength();
     A                  = f / camera.getAperture();
     d                  = std::max(zn, camera.getFocusDistance());
-    worldOffset        = camera.getPosition();
-    worldOrigin        = mat4f{ worldOriginCamera };
 }
 
 } // namespace filament

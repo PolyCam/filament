@@ -42,7 +42,7 @@ namespace BindingPoints {
     constexpr uint8_t FROXEL_RECORDS             = 6;
     constexpr uint8_t PER_MATERIAL_INSTANCE      = 7;    // uniforms/samplers updates per material
     constexpr uint8_t COUNT                      = 8;
-    // These are limited by Program::UNIFORM_BINDING_COUNT (currently 8)
+    // These are limited by CONFIG_BINDING_COUNT (currently 12)
 }
 
 static_assert(BindingPoints::COUNT <= backend::CONFIG_BINDING_COUNT);
@@ -64,7 +64,7 @@ constexpr size_t CONFIG_MAX_SHADOW_CASTING_SPOTS = 14;
 constexpr size_t CONFIG_MAX_SHADOW_CASCADES = 4;
 
 // This value is also limited by UBO size, ES3.0 only guarantees 16 KiB.
-// We store 64 bytes per bone.
+// We store 64 bytes per bone. Must be a power-of-two.
 constexpr size_t CONFIG_MAX_BONE_COUNT = 256;
 
 // The maximum number of morph target count.
@@ -73,4 +73,4 @@ constexpr size_t CONFIG_MAX_MORPH_TARGET_COUNT = 256;
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_driver/EngineEnums.h
+#endif // TNT_FILAMENT_ENGINE_ENUM_H

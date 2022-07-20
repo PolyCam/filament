@@ -19,56 +19,60 @@
 #include <utils/Panic.h>
 #include <utils/compiler.h>
 
+#include <utility>
+
 using namespace utils;
 
 namespace filament {
 
-UniformInterfaceBlock::Builder&
-UniformInterfaceBlock::Builder::name(utils::CString const& interfaceBlockName) {
-    mName = interfaceBlockName;
-    return *this;
+UniformInterfaceBlock::Builder::Entry::Entry(utils::CString name, uint32_t size,
+        UniformInterfaceBlock::Type type, UniformInterfaceBlock::Precision precision) noexcept
+        : name(std::move(name)), size(size), type(type), precision(precision),
+          stride(strideForType(type, 0)) {
 }
 
-UniformInterfaceBlock::Builder&
-UniformInterfaceBlock::Builder::name(utils::CString&& interfaceBlockName) {
-    interfaceBlockName.swap(mName);
-    return *this;
+UniformInterfaceBlock::Builder::Entry::Entry(utils::CString name, uint32_t size,
+        utils::CString structName, size_t stride) noexcept
+        : name(std::move(name)), size(size), type(Type::STRUCT), structName(std::move(structName)),
+          stride(stride) {
 }
 
+UniformInterfaceBlock::Builder::Builder() noexcept = default;
+UniformInterfaceBlock::Builder::~Builder() noexcept = default;
+
 UniformInterfaceBlock::Builder&
-UniformInterfaceBlock::Builder::name(utils::StaticString const& interfaceBlockName) {
-    mName = CString{ interfaceBlockName };
+UniformInterfaceBlock::Builder::name(utils::CString interfaceBlockName) {
+    mName = std::move(interfaceBlockName);
     return *this;
 }
 
 UniformInterfaceBlock::Builder& UniformInterfaceBlock::Builder::add(
-        utils::CString const& uniformName, size_t size, UniformInterfaceBlock::Type type,
+        utils::CString uniformName, UniformInterfaceBlock::Type type,
         UniformInterfaceBlock::Precision precision) {
-    mEntries.emplace_back(uniformName, (uint32_t)size, type, precision);
+    mEntries.emplace_back(std::move(uniformName), 0u, type, precision);
     return *this;
 }
 
 UniformInterfaceBlock::Builder& UniformInterfaceBlock::Builder::add(
-        utils::CString&& uniformName, size_t size, UniformInterfaceBlock::Type type,
+        utils::CString uniformName, size_t size, UniformInterfaceBlock::Type type,
         UniformInterfaceBlock::Precision precision) {
     mEntries.emplace_back(std::move(uniformName), (uint32_t)size, type, precision);
     return *this;
 }
 
 UniformInterfaceBlock::Builder& UniformInterfaceBlock::Builder::add(
-        utils::StaticString const& uniformName, size_t size, UniformInterfaceBlock::Type type,
-        UniformInterfaceBlock::Precision precision) {
-    mEntries.emplace_back(uniformName, (uint32_t)size, type, precision);
+        utils::CString uniformName,
+        utils::CString structName, size_t stride) {
+    mEntries.emplace_back(std::move(uniformName), 0u, std::move(structName), stride);
     return *this;
 }
 
 UniformInterfaceBlock::Builder& UniformInterfaceBlock::Builder::add(
-        utils::CString const& uniformName, size_t size,
-        utils::CString const& structName, size_t stride) {
-    mEntries.emplace_back(uniformName, (uint32_t)size, structName, stride);
+        utils::CString uniformName, size_t size,
+        utils::CString structName, size_t stride) {
+    mEntries.emplace_back(std::move(uniformName), (uint32_t)size, std::move(structName), stride);
     return *this;
 }
-
 
 UniformInterfaceBlock UniformInterfaceBlock::Builder::build() {
     return UniformInterfaceBlock(*this);
@@ -77,26 +81,24 @@ UniformInterfaceBlock UniformInterfaceBlock::Builder::build() {
 // --------------------------------------------------------------------------------------------------------------------
 
 UniformInterfaceBlock::UniformInterfaceBlock() = default;
-UniformInterfaceBlock::UniformInterfaceBlock(const UniformInterfaceBlock& rhs) = default;
-UniformInterfaceBlock::UniformInterfaceBlock(UniformInterfaceBlock&& rhs) noexcept /* = default */ {};
-UniformInterfaceBlock& UniformInterfaceBlock::operator=(const UniformInterfaceBlock& rhs) = default;
-UniformInterfaceBlock& UniformInterfaceBlock::operator=(UniformInterfaceBlock&& rhs) /*noexcept*/ = default;
+UniformInterfaceBlock::UniformInterfaceBlock(UniformInterfaceBlock&& rhs) noexcept = default;
+UniformInterfaceBlock& UniformInterfaceBlock::operator=(UniformInterfaceBlock&& rhs) noexcept = default;
 UniformInterfaceBlock::~UniformInterfaceBlock() noexcept = default;
 
 UniformInterfaceBlock::UniformInterfaceBlock(Builder const& builder) noexcept
-    : mName(builder.mName)
+    : mName(builder.mName), mUniformsInfoList(builder.mEntries.size())
 {
     auto& infoMap = mInfoMap;
-    auto& uniformsInfoList = mUniformsInfoList;
     infoMap.reserve(builder.mEntries.size());
-    uniformsInfoList.resize(builder.mEntries.size());
+
+    auto& uniformsInfoList = mUniformsInfoList;
 
     uint32_t i = 0;
     uint16_t offset = 0;
     for (auto const& e : builder.mEntries) {
         size_t alignment = baseAlignmentForType(e.type);
         uint8_t stride = strideForType(e.type, e.stride);
-        if (e.size > 1) { // this is an array
+        if (e.size > 0) { // this is an array
             // round the alignment up to that of a float4
             alignment = (alignment + 3) & ~3;
             stride = (stride + uint8_t(3)) & ~uint8_t(3);
@@ -113,7 +115,7 @@ UniformInterfaceBlock::UniformInterfaceBlock(Builder const& builder) noexcept
         infoMap[info.name.c_str()] = i;
 
         // advance offset to next slot
-        offset += stride * e.size;
+        offset += stride * std::max(1u, e.size);
         ++i;
     }
 

@@ -27,8 +27,7 @@ struct FroxelParams {
 uvec3 getFroxelCoords(const highp vec3 fragCoords) {
     uvec3 froxelCoord;
 
-    froxelCoord.xy = uvec2(fragCoords.xy * frameUniforms.resolution.xy *
-            vec2(frameUniforms.oneOverFroxelDimension, frameUniforms.oneOverFroxelDimensionY));
+    froxelCoord.xy = uvec2(fragCoords.xy * frameUniforms.froxelCountXY);
 
     // go from screen-space to reciprocal of normalized view-space Z (i.e. scaled by 1/zLightFar)
     // we get away with the reciprocal because 1/z is handled by the log2() below.
@@ -56,9 +55,9 @@ uvec3 getFroxelCoords(const highp vec3 fragCoords) {
  */
 uint getFroxelIndex(const highp vec3 fragCoords) {
     uvec3 froxelCoord = getFroxelCoords(fragCoords);
-    return froxelCoord.x * frameUniforms.fParamsX +
-           froxelCoord.y * frameUniforms.fParams.x +
-           froxelCoord.z * frameUniforms.fParams.y;
+    return froxelCoord.x * frameUniforms.fParams.x +
+           froxelCoord.y * frameUniforms.fParams.y +
+           froxelCoord.z * frameUniforms.fParams.z;
 }
 
 /**
@@ -195,7 +194,7 @@ void evaluatePunctualLights(const MaterialInputs material,
 
     uint index = froxel.recordOffset;
     uint end = index + froxel.count;
-    uint channels = objectUniforms.channels & 0xFFu;
+    uint channels = getObjectUniforms().flagsChannels & 0xFFu;
 
     // Iterate point lights
     for ( ; index < end; index++) {
@@ -218,7 +217,7 @@ void evaluatePunctualLights(const MaterialInputs material,
                 visibility = shadow(false, light_shadowMap, light.shadowLayer, light.shadowIndex, 0u);
             }
             if (light.contactShadows && visibility > 0.0) {
-                if ((objectUniforms.flags & FILAMENT_OBJECT_CONTACT_SHADOWS_BIT) != 0u) {
+                if ((getObjectUniforms().flagsChannels & FILAMENT_OBJECT_CONTACT_SHADOWS_BIT) != 0u) {
                     visibility *= 1.0 - screenSpaceContactShadow(light.l);
                 }
             }

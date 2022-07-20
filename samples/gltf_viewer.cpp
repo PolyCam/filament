@@ -33,10 +33,11 @@
 #include <gltfio/AssetLoader.h>
 #include <gltfio/FilamentAsset.h>
 #include <gltfio/ResourceLoader.h>
+#include <gltfio/TextureProvider.h>
 
 #include <viewer/AutomationEngine.h>
 #include <viewer/AutomationSpec.h>
-#include <viewer/SimpleViewer.h>
+#include <viewer/ViewerGui.h>
 
 #include <camutils/Manipulator.h>
 
@@ -56,23 +57,24 @@
 #include <iostream>
 #include <string>
 
-#include "generated/resources/gltf_viewer.h"
+#include "generated/resources/gltf_demo.h"
+#include "materials/uberarchive.h"
 
 using namespace filament;
 using namespace filament::math;
 using namespace filament::viewer;
 
-using namespace gltfio;
+using namespace filament::gltfio;
 using namespace utils;
 
 enum MaterialSource {
-    GENERATE_SHADERS,
-    LOAD_UBERSHADERS,
+    JITSHADER,
+    UBERSHADER,
 };
 
 struct App {
     Engine* engine;
-    SimpleViewer* viewer;
+    ViewerGui* viewer;
     Config config;
     Camera* mainCamera;
 
@@ -81,9 +83,11 @@ struct App {
     NameComponentManager* names;
 
     MaterialProvider* materials;
-    MaterialSource materialSource = GENERATE_SHADERS;
+    MaterialSource materialSource = JITSHADER;
 
     gltfio::ResourceLoader* resourceLoader = nullptr;
+    gltfio::TextureProvider* stbDecoder = nullptr;
+    gltfio::TextureProvider* ktxDecoder = nullptr;
     bool recomputeAabb = false;
     bool ignoreBindTransform = false;
 
@@ -101,6 +105,7 @@ struct App {
 
     ColorGrading* colorGrading = nullptr;
 
+    std::string notificationText;
     std::string messageBoxText;
     std::string settingsFile;
     std::string batchFile;
@@ -135,7 +140,7 @@ static void printUsage(char* name) {
         "   --recompute-aabb, -r\n"
         "       Ignore the min/max attributes in the glTF file\n\n"
         "   --ignore-bind-transform, -g\n"
-        "       Ignore bind transform when recomputing aabb\n\n"
+        "       Ignore bind transform when recomputing aabb (use with -r)\n\n"
         "   --settings=<path to JSON file>, -t\n"
         "       Apply the settings in the given JSON file\n\n"
         "   --ubershader, -u\n"
@@ -216,7 +221,7 @@ static int handleCommandLineArguments(int argc, char* argv[], App* app) {
                 app->config.iblDirectory = arg;
                 break;
             case 'u':
-                app->materialSource = LOAD_UBERSHADERS;
+                app->materialSource = UBERSHADER;
                 break;
             case 's':
                 app->actualSize = true;
@@ -264,7 +269,7 @@ static bool loadSettings(const char* filename, Settings* out) {
 static void createGroundPlane(Engine* engine, Scene* scene, App& app) {
     auto& em = EntityManager::get();
     Material* shadowMaterial = Material::Builder()
-            .package(GLTF_VIEWER_GROUNDSHADOW_DATA, GLTF_VIEWER_GROUNDSHADOW_SIZE)
+            .package(GLTF_DEMO_GROUNDSHADOW_DATA, GLTF_DEMO_GROUNDSHADOW_SIZE)
             .build(*engine);
     auto& viewerOptions = app.viewer->getSettings().viewer;
     shadowMaterial->setDefaultParameter("strength", viewerOptions.groundShadowStrength);
@@ -350,6 +355,16 @@ static void createGroundPlane(Engine* engine, Scene* scene, App& app) {
     app.scene.groundMaterial = shadowMaterial;
 }
 
+static void onClick(App& app, View* view, ImVec2 pos) {
+    view->pick(pos.x, pos.y, [&app](View::PickingQueryResult const& result){
+        if (const char* name = app.asset->getName(result.renderable); name) {
+            app.notificationText = name;
+        } else {
+            app.notificationText.clear();
+        }
+    });
+}
+
 int main(int argc, char** argv) {
     App app;
 
@@ -423,6 +438,11 @@ int main(int argc, char** argv) {
         configuration.normalizeSkinningWeights = true;
         if (!app.resourceLoader) {
             app.resourceLoader = new gltfio::ResourceLoader(configuration);
+            app.stbDecoder = createStbProvider(app.engine);
+            app.ktxDecoder = createKtx2Provider(app.engine);
+            app.resourceLoader->addTextureProvider("image/png", app.stbDecoder);
+            app.resourceLoader->addTextureProvider("image/jpeg", app.stbDecoder);
+            app.resourceLoader->addTextureProvider("image/ktx2", app.ktxDecoder);
         }
         app.resourceLoader->asyncBeginLoad(app.asset);
         app.asset->releaseSourceData();
@@ -436,7 +456,7 @@ int main(int argc, char** argv) {
     auto setup = [&](Engine* engine, View* view, Scene* scene) {
         app.engine = engine;
         app.names = new NameComponentManager(EntityManager::get());
-        app.viewer = new SimpleViewer(engine, scene, view, 410);
+        app.viewer = new ViewerGui(engine, scene, view, 410);
         app.viewer->getSettings().viewer.autoScaleEnabled = !app.actualSize;
 
         const bool batchMode = !app.batchFile.empty();
@@ -486,24 +506,44 @@ int main(int argc, char** argv) {
             }
         }
 
-        app.materials = (app.materialSource == GENERATE_SHADERS) ?
-                createMaterialGenerator(engine) : createUbershaderLoader(engine);
+        app.materials = (app.materialSource == JITSHADER) ? createJitShaderProvider(engine) :
+                createUbershaderProvider(engine, UBERARCHIVE_DEFAULT_DATA, UBERARCHIVE_DEFAULT_SIZE);
+
         app.assetLoader = AssetLoader::create({engine, app.materials, app.names });
         app.mainCamera = &view->getCamera();
         if (filename.isEmpty()) {
             app.asset = app.assetLoader->createAssetFromBinary(
-                    GLTF_VIEWER_DAMAGEDHELMET_DATA,
-                    GLTF_VIEWER_DAMAGEDHELMET_SIZE);
+                    GLTF_DEMO_DAMAGEDHELMET_DATA,
+                    GLTF_DEMO_DAMAGEDHELMET_SIZE);
         } else {
             loadAsset(filename);
         }
 
         loadResources(filename);
+        app.viewer->setAsset(app.asset);
 
         createGroundPlane(engine, scene, app);
 
         app.viewer->setUiCallback([&app, scene, view, engine] () {
             auto& automation = *app.automationEngine;
+
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                ImVec2 pos = ImGui::GetMousePos();
+                pos.x -= app.viewer->getSidebarWidth();
+                pos.x *= ImGui::GetIO().DisplayFramebufferScale.x;
+                pos.y *= ImGui::GetIO().DisplayFramebufferScale.y;
+                if (pos.x > 0) {
+                    pos.y = view->getViewport().height - 1 - pos.y;
+                    onClick(app, view, pos);
+                }
+            }
+
+            const ImVec4 yellow(1.0f,1.0f,0.0f,1.0f);
+
+            if (!app.notificationText.empty()) {
+                ImGui::TextColored(yellow, "Picked %s", app.notificationText.c_str());
+                ImGui::Spacing();
+            }
 
             float progress = app.resourceLoader->asyncGetLoadProgress();
             if (progress < 1.0) {
@@ -520,7 +560,6 @@ int main(int argc, char** argv) {
             if (ImGui::CollapsingHeader("Automation", flags)) {
                 ImGui::Indent();
 
-                const ImVec4 yellow(1.0f,1.0f,0.0f,1.0f);
                 if (automation.isRunning()) {
                     ImGui::TextColored(yellow, "Test case %zu / %zu",
                             automation.currentTest(), automation.testCount());
@@ -575,6 +614,7 @@ int main(int argc, char** argv) {
                         debug.getPropertyAddress<bool>("d.renderer.doFrameCapture");
                     *captureFrame = true;
                 }
+                ImGui::Checkbox("Camera at origin", debug.getPropertyAddress<bool>("d.view.camera_at_origin"));
                 auto dataSource = debug.getDataSource("d.view.frame_info");
                 if (dataSource.data) {
                     ImGuiExt::PlotLinesSeries("FrameInfo", 6,
@@ -644,6 +684,9 @@ int main(int argc, char** argv) {
         delete app.viewer;
         delete app.materials;
         delete app.names;
+        delete app.resourceLoader;
+        delete app.stbDecoder;
+        delete app.ktxDecoder;
 
         AssetLoader::destroy(&app.assetLoader);
     };
@@ -654,8 +697,8 @@ int main(int argc, char** argv) {
         // Optionally fit the model into a unit cube at the origin.
         app.viewer->updateRootTransform();
 
-        // Add renderables to the scene as they become ready.
-        app.viewer->populateScene(app.asset);
+        // Gradually add renderables to the scene as their textures become ready.
+        app.viewer->populateScene();
 
         app.viewer->applyAnimation(now);
     };
@@ -685,6 +728,8 @@ int main(int argc, char** argv) {
         const auto& dofOptions = app.viewer->getSettings().view.dof;
         rcm.setLayerMask(instance,
                 0xff, viewerOptions.groundPlaneEnabled ? 0xff : 0x00);
+
+        engine->setAutomaticInstancingEnabled(viewerOptions.autoInstancingEnabled);
 
         // Note that this focal length might be different from the slider value because the
         // automation engine applies Camera::computeEffectiveFocalLength when DoF is enabled.
@@ -755,6 +800,7 @@ int main(int argc, char** argv) {
         app.assetLoader->destroyAsset(app.asset);
         loadAsset(path);
         loadResources(path);
+        app.viewer->setAsset(app.asset);
     });
 
     filamentApp.run(app.config, setup, cleanup, gui, preRender, postRender);

@@ -28,8 +28,6 @@
 #include <private/filament/SubpassInfo.h>
 #include <private/filament/Variant.h>
 
-#include <filaflat/ShaderBuilder.h>
-
 #include <utils/compiler.h>
 
 #include <atomic>
@@ -77,17 +75,27 @@ public:
 
     FEngine& getEngine() const noexcept  { return mEngine; }
 
-    backend::Handle<backend::HwProgram> getProgram(Variant variant) const noexcept {
+    // prepareProgram creates the program for the material's given variant at the backend level.
+    // Must be called outside of backend render pass.
+    // Must be called before getProgram() below.
+    void prepareProgram(Variant variant) const noexcept {
+        // prepareProgram() is called for each RenderPrimitive in the scene, so it must be efficient.
+        if (UTILS_UNLIKELY(!mCachedPrograms[variant.key])) {
+            prepareProgramSlow(variant);
+        }
+    }
+
+    // getProgram returns the backend program for the material's given variant.
+    // Must be called after prepareProgram().
+    [[nodiscard]] backend::Handle<backend::HwProgram> getProgram(Variant variant) const noexcept {
 #if FILAMENT_ENABLE_MATDBG
         assert_invariant(variant.key < VARIANT_COUNT);
         mActivePrograms.set(variant.key);
-        if (UTILS_UNLIKELY(mPendingEdits.load())) {
-            const_cast<FMaterial*>(this)->applyPendingEdits();
-        }
 #endif
-        backend::Handle<backend::HwProgram> const entry = mCachedPrograms[variant.key];
-        return UTILS_LIKELY(entry) ? entry : getProgramSlow(variant);
+        assert_invariant(mCachedPrograms[variant.key]);
+        return mCachedPrograms[variant.key];
     }
+
     backend::Program getProgramBuilderWithVariants(Variant variant, Variant vertexVariant,
             Variant fragmentVariant) const noexcept;
 
@@ -140,6 +148,7 @@ public:
 
     void destroyPrograms(FEngine& engine);
 
+#if FILAMENT_ENABLE_MATDBG
     /**
      * Callback handlers for the debug server, potentially called from any thread. The userdata
      * argument has the same value that was passed to DebugServer::addMaterial(), which should
@@ -160,23 +169,25 @@ public:
      */
     static void onQueryCallback(void* userdata, VariantList* pActiveVariants);
 
+    void checkProgramEdits() noexcept {
+        if (UTILS_UNLIKELY(mPendingEdits.load())) {
+            applyPendingEdits();
+        }
+    }
+
     /** @}*/
+#endif
 
 private:
-    backend::Handle<backend::HwProgram> getProgramSlow(Variant variant) const noexcept;
-    backend::Handle<backend::HwProgram> getSurfaceProgramSlow(Variant variant) const noexcept;
-    backend::Handle<backend::HwProgram> getPostProcessProgramSlow(Variant variant) const noexcept;
+    void prepareProgramSlow(Variant variant) const noexcept;
+    void getSurfaceProgramSlow(Variant variant) const noexcept;
+    void getPostProcessProgramSlow(Variant variant) const noexcept;
 
-    backend::Handle<backend::HwProgram> createAndCacheProgram(backend::Program&& p,
+    void createAndCacheProgram(backend::Program&& p,
             Variant variant) const noexcept;
 
     // try to order by frequency of use
     mutable std::array<backend::Handle<backend::HwProgram>, VARIANT_COUNT> mCachedPrograms;
-
-#if FILAMENT_ENABLE_MATDBG
-    // TODO: this should be protected with a mutex
-    mutable VariantList mActivePrograms;
-#endif
 
     backend::RasterState mRasterState;
     BlendingMode mRenderBlendingMode = BlendingMode::OPAQUE;
@@ -214,6 +225,8 @@ private:
 
 #if FILAMENT_ENABLE_MATDBG
     matdbg::MaterialKey mDebuggerId;
+    // TODO: this should be protected with a mutex
+    mutable VariantList mActivePrograms;
 #endif
 
     utils::CString mName;

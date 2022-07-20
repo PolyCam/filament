@@ -14,15 +14,14 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_ANDROID_H
-#define TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_ANDROID_H
+#ifndef TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_ANDROID_H
+#define TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_ANDROID_H
 
 #include "PlatformEGL.h"
 
-namespace filament {
+namespace filament::backend {
 
 class ExternalStreamManagerAndroid;
-class ExternalTextureManagerAndroid;
 
 class PlatformEGLAndroid final : public PlatformEGL {
 public:
@@ -32,7 +31,7 @@ public:
 
     void terminate() noexcept override;
 
-    backend::Driver* createDriver(void* sharedContext) noexcept final;
+    Driver* createDriver(void* sharedContext) noexcept final;
 
     int getOSVersion() const noexcept final;
 
@@ -44,19 +43,13 @@ public:
     void detach(Stream* stream) noexcept final;
     void updateTexImage(Stream* stream, int64_t* timestamp) noexcept final;
 
-    ExternalTexture* createExternalTextureStorage() noexcept final;
-    void reallocateExternalStorage(ExternalTexture* ets,
-            uint32_t w, uint32_t h, backend::TextureFormat format) noexcept final;
-    void destroyExternalTextureStorage(ExternalTexture* ets) noexcept final;
-
-    backend::AcquiredImage transformAcquiredImage(backend::AcquiredImage source) noexcept final;
+    AcquiredImage transformAcquiredImage(AcquiredImage source) noexcept final;
 
 private:
     int mOSVersion;
     ExternalStreamManagerAndroid& mExternalStreamManager;
-    ExternalTextureManagerAndroid& mExternalTextureManager;
 };
 
-} // namespace filament
+} // namespace filament::backend
 
-#endif // TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_ANDROID_H
+#endif // TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_ANDROID_H

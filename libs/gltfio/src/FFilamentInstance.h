@@ -19,29 +19,54 @@
 
 #include <gltfio/FilamentInstance.h>
 
+#include <utils/CString.h>
 #include <utils/Entity.h>
+#include <utils/FixedCapacityVector.h>
 
 #include <math/mat4.h>
 
 #include <tsl/robin_map.h>
+#include <tsl/robin_set.h>
 
-#include <string>
 #include <vector>
 
 #include "upcast.h"
 
 struct cgltf_node;
 
-namespace gltfio {
+namespace filament {
+    class MaterialInstance;
+}
+
+namespace filament::gltfio {
 
 struct FFilamentAsset;
 class Animator;
 
 struct Skin {
-    std::string name;
-    std::vector<filament::math::mat4f> inverseBindMatrices;
-    std::vector<utils::Entity> joints;
-    std::vector<utils::Entity> targets;
+    utils::CString name;
+
+    // The inverse bind matrices and joints arrays must have the same count. Each element
+    // corresponds to a single bone. We considered using the ECS to store these, but this would be
+    // complicated because a single node might be used as a bone in more than one skin, and its
+    // inverse bind matrix might be unique in each of these skins.
+    utils::FixedCapacityVector<filament::math::mat4f> inverseBindMatrices;
+    utils::FixedCapacityVector<utils::Entity> joints;
+
+    // The set of all nodes that are influenced by this skin.
+    // This is initially gleaned from the glTF file using the "skin" attribute of each node.
+    tsl::robin_set<utils::Entity, utils::Entity::Hasher> targets;
+};
+
+struct VariantMapping {
+    utils::Entity renderable;
+    size_t primitiveIndex;
+    filament::MaterialInstance* material;
+};
+
+struct Variant {
+    utils::CString name;
+    std::vector<VariantMapping> mappings;
 };
 
 using SkinVector = std::vector<Skin>;
@@ -49,6 +74,7 @@ using NodeMap = tsl::robin_map<const cgltf_node*, utils::Entity>;
 
 struct FFilamentInstance : public FilamentInstance {
     std::vector<utils::Entity> entities;
+    utils::FixedCapacityVector<Variant> variants;
     utils::Entity root;
     Animator* animator;
     FFilamentAsset* owner;
@@ -60,10 +86,11 @@ struct FFilamentInstance : public FilamentInstance {
     const char* getSkinNameAt(size_t skinIndex) const noexcept;
     size_t getJointCountAt(size_t skinIndex) const noexcept;
     const utils::Entity* getJointsAt(size_t skinIndex) const noexcept;
+    void applyMaterialVariant(size_t variantIndex) noexcept;
 };
 
 FILAMENT_UPCAST(FilamentInstance)
 
-} // namespace gltfio
+} // namespace filament::gltfio
 
 #endif // GLTFIO_FFILAMENTINSTANCE_H

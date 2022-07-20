@@ -33,6 +33,8 @@ set(DIST_HDRS
         ${PUBLIC_HDR_DIR}/${TARGET}/ostream.h
         ${PUBLIC_HDR_DIR}/${TARGET}/Panic.h
         ${PUBLIC_HDR_DIR}/${TARGET}/Path.h
+        ${PUBLIC_HDR_DIR}/${TARGET}/PrivateImplementation.h
+        ${PUBLIC_HDR_DIR}/${TARGET}/PrivateImplementation-impl.h
         ${PUBLIC_HDR_DIR}/${TARGET}/SingleInstanceComponentManager.h
         ${PUBLIC_HDR_DIR}/${TARGET}/Slice.h
         ${PUBLIC_HDR_DIR}/${TARGET}/SpinLock.h
@@ -139,6 +141,7 @@ set(TEST_SRCS
         test/test_CyclicBarrier.cpp
         test/test_Entity.cpp
         test/test_FixedCapacityVector.cpp
+        test/test_Hash.cpp
         test/test_JobSystem.cpp
         test/test_RangeMap.cpp
         test/test_StructureOfArrays.cpp

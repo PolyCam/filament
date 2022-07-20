@@ -27,6 +27,8 @@
 #include "details/Material.h"
 
 #include "private/filament/SibGenerator.h"
+#include "filament/RenderableManager.h"
+
 
 #include <backend/DriverEnums.h>
 
@@ -210,9 +212,18 @@ RenderableManager::Builder& RenderableManager::Builder::morphing(uint8_t level, 
     return *this;
 }
 
-RenderableManager::Builder& RenderableManager::Builder::blendOrder(size_t index, uint16_t blendOrder) noexcept {
+RenderableManager::Builder& RenderableManager::Builder::blendOrder(
+        size_t index, uint16_t blendOrder) noexcept {
     if (index < mImpl->mEntries.size()) {
         mImpl->mEntries[index].blendOrder = blendOrder;
+    }
+    return *this;
+}
+
+RenderableManager::Builder& RenderableManager::Builder::globalBlendOrderEnabled(
+        size_t index, bool enabled) noexcept {
+    if (index < mImpl->mEntries.size()) {
+        mImpl->mEntries[index].globalBlendOrderEnabled = enabled;
     }
     return *this;
 }
@@ -323,8 +334,9 @@ void FRenderableManager::create(
         Builder::Entry const * const entries = builder->mEntries.data();
         const size_t entryCount = builder->mEntries.size();
         FRenderPrimitive* rp = new FRenderPrimitive[entryCount];
+        auto& factory = mHwRenderPrimitiveFactory;
         for (size_t i = 0; i < entryCount; ++i) {
-            rp[i].init(driver, entries[i]);
+            rp[i].init(factory, driver, entries[i]);
         }
         setPrimitives(ci, { rp, size_type(entryCount) });
 
@@ -370,7 +382,7 @@ void FRenderableManager::create(
                 // large block of bones.
                 bones = Bones{
                         .handle = driver.createBufferObject(
-                                CONFIG_MAX_BONE_COUNT * sizeof(PerRenderableUibBone),
+                                sizeof(PerRenderableBoneUib),
                                 BufferObjectBinding::UNIFORM,
                                 backend::BufferUsage::DYNAMIC),
                         .count = (uint16_t)boneCount,
@@ -386,10 +398,10 @@ void FRenderableManager::create(
                                 builder->mUserBoneMatrices, boneCount, 0);
                     } else {
                         // initialize the bones to identity
-                        auto* out = driver.allocatePod<PerRenderableUibBone>(boneCount);
+                        auto* out = driver.allocatePod<PerRenderableBoneUib::BoneData>(boneCount);
                         std::uninitialized_fill_n(out, boneCount, FSkinningBuffer::makeBone({}));
                         driver.updateBufferObject(bones.handle, {
-                                out, boneCount * sizeof(PerRenderableUibBone) }, 0);
+                                out, boneCount * sizeof(PerRenderableBoneUib::BoneData) }, 0);
                     }
                 }
             }
@@ -452,6 +464,7 @@ void FRenderableManager::terminate() noexcept {
             manager.removeComponent(manager.getEntity(ci));
         }
     }
+    mHwRenderPrimitiveFactory.terminate(mEngine.getDriverApi());
 }
 
 void FRenderableManager::gc(utils::EntityManager& em) noexcept {
@@ -466,7 +479,7 @@ void FRenderableManager::destroyComponent(Instance ci) noexcept {
     FEngine::DriverApi& driver = engine.getDriverApi();
 
     // See create(RenderableManager::Builder&, Entity)
-    destroyComponentPrimitives(engine, manager[ci].primitives);
+    destroyComponentPrimitives(mHwRenderPrimitiveFactory, driver, manager[ci].primitives);
     destroyComponentMorphTargets(engine, manager[ci].morphTargets);
 
     // destroy the bones structures if any
@@ -483,9 +496,10 @@ void FRenderableManager::destroyComponent(Instance ci) noexcept {
 }
 
 void FRenderableManager::destroyComponentPrimitives(
-        FEngine& engine, Slice<FRenderPrimitive>& primitives) noexcept {
+        HwRenderPrimitiveFactory& factory, backend::DriverApi& driver,
+        Slice<FRenderPrimitive>& primitives) noexcept {
     for (auto& primitive : primitives) {
-        primitive.terminate(engine);
+        primitive.terminate(factory, driver);
     }
     delete[] primitives.data();
 }
@@ -535,6 +549,16 @@ void FRenderableManager::setBlendOrderAt(Instance instance, uint8_t level,
     }
 }
 
+void FRenderableManager::setGlobalBlendOrderEnabledAt(Instance instance, uint8_t level,
+        size_t primitiveIndex, bool enabled) noexcept {
+    if (instance) {
+        Slice<FRenderPrimitive>& primitives = getRenderPrimitives(instance, level);
+        if (primitiveIndex < primitives.size()) {
+            primitives[primitiveIndex].setGlobalBlendOrderEnabled(enabled);
+        }
+    }
+}
+
 AttributeBitset FRenderableManager::getEnabledAttributesAt(
         Instance instance, uint8_t level, size_t primitiveIndex) const noexcept {
     if (instance) {
@@ -552,18 +576,8 @@ void FRenderableManager::setGeometryAt(Instance instance, uint8_t level, size_t 
     if (instance) {
         Slice<FRenderPrimitive>& primitives = getRenderPrimitives(instance, level);
         if (primitiveIndex < primitives.size()) {
-            primitives[primitiveIndex].set(mEngine, type, vertices, indices, offset,
-                    0, vertices->getVertexCount() - 1, count);
-        }
-    }
-}
-
-void FRenderableManager::setGeometryAt(Instance instance, uint8_t level, size_t primitiveIndex,
-        PrimitiveType type, size_t offset, size_t count) noexcept {
-    if (instance) {
-        Slice<FRenderPrimitive>& primitives = getRenderPrimitives(instance, level);
-        if (primitiveIndex < primitives.size()) {
-            primitives[primitiveIndex].set(mEngine, type, offset, 0, 0, count);
+            primitives[primitiveIndex].set(mHwRenderPrimitiveFactory, mEngine.getDriverApi(),
+                    type, vertices, indices, offset, 0, vertices->getVertexCount() - 1, count);
         }
     }
 }
@@ -609,9 +623,8 @@ void FRenderableManager::setSkinningBuffer(FRenderableManager::Instance ci,
             "Enable skinning buffer mode to use this API");
 
     ASSERT_PRECONDITION(
-            count + offset < skinningBuffer->getBoneCount(),
-            "SkinningBuffer overflow (size=%u, count=%u, offset=%u)",
-            skinningBuffer->getBoneCount(), count, offset);
+            count <= CONFIG_MAX_BONE_COUNT,
+            "SkinningBuffer larger than 256 (count=%u)", count);
 
     // According to the OpenGL ES 3.2 specification in 7.6.3 Uniform
     // Buffer Object Bindings:
@@ -620,11 +633,13 @@ void FRenderableManager::setSkinningBuffer(FRenderableManager::Instance ci,
     //     than the minimum required size of the uniform block (the value of
     //     UNIFORM_BLOCK_DATA_SIZE).
     //
-    // So we round-up the "window" of bones set to match UNIFORM_BLOCK_DATA_SIZE, the SkinningBuffer
-    // should always contain enough date for this to work.
 
-    count = FSkinningBuffer::getPhysicalBoneCount(count);
-    assert_invariant(count + offset < skinningBuffer->getBoneCount());
+    count = CONFIG_MAX_BONE_COUNT;
+
+    ASSERT_PRECONDITION(
+            count + offset <= skinningBuffer->getBoneCount(),
+            "SkinningBuffer overflow (size=%u, count=%u, offset=%u)",
+            skinningBuffer->getBoneCount(), count, offset);
 
     bones.handle = skinningBuffer->getHwHandle();
     bones.count = uint16_t(count);

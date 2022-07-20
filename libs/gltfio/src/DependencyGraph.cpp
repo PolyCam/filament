@@ -19,7 +19,7 @@
 using namespace filament;
 using namespace utils;
 
-namespace gltfio {
+namespace filament::gltfio {
 
 size_t DependencyGraph::popRenderables(Entity* result, size_t count) noexcept {
     if (result == nullptr) {
@@ -53,7 +53,7 @@ void DependencyGraph::addEdge(MaterialInstance* mi, const char* parameter) {
 // objects. Find all non-textured entities and immediately add mark them as ready.
 void DependencyGraph::finalize() {
     assert(!mFinalized);
-    for (auto pair : mMaterialToEntity) {
+    for (const auto& pair : mMaterialToEntity) {
         auto mi = pair.first;
         if (mMaterialToTexture.find(mi) == mMaterialToTexture.end()) {
             markAsReady(mi);
@@ -64,7 +64,7 @@ void DependencyGraph::finalize() {
 
 void DependencyGraph::refinalize() {
     assert(mFinalized);
-    for (auto pair : mMaterialToEntity) {
+    for (const auto& pair : mMaterialToEntity) {
         auto material = pair.first;
         if (mMaterialToTexture.find(material) == mMaterialToTexture.end()) {
             markAsReady(material);
@@ -75,7 +75,7 @@ void DependencyGraph::refinalize() {
 }
 
 void DependencyGraph::addEdge(Texture* texture, MaterialInstance* material, const char* parameter) {
-    assert(mFinalized);
+    assert(texture && !mFinalized);
     mTextureToMaterial[texture].insert(material);
     mMaterialToTexture.at(material).params.at(parameter) = getStatus(texture);
 }
@@ -85,7 +85,8 @@ void DependencyGraph::checkReadiness(Material* material) {
 
     // Check this material's texture parameters, there are 5 in the worst case.
     bool materialIsReady = true;
-    for (auto pair : status.params) {
+    for (const auto& pair : status.params) {
+        assert(pair.second && "Parameter-to-Texture edge is missing.");
         if (!pair.second->ready) {
             materialIsReady = false;
             break;
@@ -125,6 +126,7 @@ void DependencyGraph::markAsReady(MaterialInstance* material) {
 }
 
 DependencyGraph::TextureNode* DependencyGraph::getStatus(Texture* texture) {
+    assert(texture);
     auto iter = mTextureNodes.find(texture);
     if (iter == mTextureNodes.end()) {
         TextureNode* status = (mTextureNodes[texture] = std::make_unique<TextureNode>()).get();
@@ -134,4 +136,4 @@ DependencyGraph::TextureNode* DependencyGraph::getStatus(Texture* texture) {
     return iter->second.get();
 }
 
-} // namespace gltfio
+} // namespace filament::gltfio

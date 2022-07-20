@@ -24,8 +24,7 @@
 
 static constexpr uint32_t TIME_BEFORE_EVICTION = VK_MAX_COMMAND_BUFFERS;
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 VulkanStage const* VulkanStagePool::acquireStage(uint32_t numBytes) {
     // First check if a stage exists whose capacity is greater than or equal to the requested size.
@@ -51,9 +50,15 @@ VulkanStage const* VulkanStagePool::acquireStage(uint32_t numBytes) {
         .size = numBytes,
         .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     };
-    VmaAllocationCreateInfo allocInfo { .pool = mContext.vmaPoolCPU };
-    vmaCreateBuffer(mContext.allocator, &bufferInfo, &allocInfo, &stage->buffer, &stage->memory,
-            nullptr);
+    VmaAllocationCreateInfo allocInfo { .usage = VMA_MEMORY_USAGE_CPU_ONLY };
+    UTILS_UNUSED_IN_RELEASE VkResult result = vmaCreateBuffer(mContext.allocator, &bufferInfo,
+            &allocInfo, &stage->buffer, &stage->memory, nullptr);
+
+#ifndef NDEBUG
+    if (result != VK_SUCCESS) {
+        utils::slog.e << "Allocation error: " << result << utils::io::endl;
+    }
+#endif
 
     return stage;
 }
@@ -203,5 +208,4 @@ void VulkanStagePool::reset() noexcept {
     mFreeStages.clear();
 }
 
-} // namespace filament
-} // namespace backend
+} // namespace filament::backend

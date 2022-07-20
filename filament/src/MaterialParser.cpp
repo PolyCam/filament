@@ -17,10 +17,8 @@
 
 #include "MaterialParser.h"
 
-#include <filaflat/BlobDictionary.h>
 #include <filaflat/ChunkContainer.h>
 #include <filaflat/MaterialChunk.h>
-#include <filaflat/ShaderBuilder.h>
 #include <filaflat/DictionaryReader.h>
 #include <filaflat/Unflattener.h>
 
@@ -98,16 +96,19 @@ ChunkContainer const& MaterialParser::getChunkContainer() const noexcept {
 
 MaterialParser::ParseResult MaterialParser::parse() noexcept {
     ChunkContainer& cc = getChunkContainer();
-    if (cc.parse()) {
-        if (!cc.hasChunk(mImpl.mMaterialTag) || !cc.hasChunk(mImpl.mDictionaryTag)) {
-            return ParseResult::ERROR_MISSING_BACKEND;
-        }
-        if (!DictionaryReader::unflatten(cc, mImpl.mDictionaryTag, mImpl.mBlobDictionary)) {
-            return ParseResult::ERROR_OTHER;
-        }
-        if (!mImpl.mMaterialChunk.readIndex(mImpl.mMaterialTag)) {
-            return ParseResult::ERROR_OTHER;
-        }
+    if (UTILS_UNLIKELY(!cc.parse())) {
+        return ParseResult::ERROR_OTHER;
+    }
+    const ChunkType matTag = mImpl.mMaterialTag;
+    const ChunkType dictTag = mImpl.mDictionaryTag;
+    if (UTILS_UNLIKELY(!cc.hasChunk(matTag) || !cc.hasChunk(dictTag))) {
+        return ParseResult::ERROR_MISSING_BACKEND;
+    }
+    if (UTILS_UNLIKELY(!DictionaryReader::unflatten(cc, dictTag, mImpl.mBlobDictionary))) {
+        return ParseResult::ERROR_OTHER;
+    }
+    if (UTILS_UNLIKELY(!mImpl.mMaterialChunk.initialize(matTag))) {
+        return ParseResult::ERROR_OTHER;
     }
     return ParseResult::SUCCESS;
 }
@@ -179,6 +180,10 @@ bool MaterialParser::getColorWrite(bool* value) const noexcept {
 
 bool MaterialParser::getDepthTest(bool* value) const noexcept {
     return mImpl.getFromSimpleChunk(ChunkType::MaterialDepthTest, value);
+}
+
+bool MaterialParser::getInstanced(bool* value) const noexcept {
+    return mImpl.getFromSimpleChunk(ChunkType::MaterialInstanced, value);
 }
 
 bool MaterialParser::getCullingMode(CullingMode* value) const noexcept {
@@ -276,7 +281,7 @@ bool MaterialParser::getReflectionMode(ReflectionMode* value) const noexcept {
     return mImpl.getFromSimpleChunk(ChunkType::MaterialReflectionMode, (uint8_t*)value);
 }
 
-bool MaterialParser::getShader(ShaderBuilder& shader,
+bool MaterialParser::getShader(ShaderContent& shader,
         ShaderModel shaderModel, Variant variant, ShaderType stage) noexcept {
     return mImpl.mMaterialChunk.getShader(shader,
             mImpl.mBlobDictionary, (uint8_t)shaderModel, variant, stage);
@@ -325,7 +330,9 @@ bool ChunkUniformInterfaceBlock::unflatten(Unflattener& unflattener,
             return false;
         }
 
-        builder.add(fieldName, fieldSize, UniformInterfaceBlock::Type(fieldType),
+        // a size of 1 means not an array
+        builder.add(fieldName, fieldSize == 1 ? 0 : fieldSize,
+                UniformInterfaceBlock::Type(fieldType),
                 UniformInterfaceBlock::Precision(fieldPrecision));
     }
 

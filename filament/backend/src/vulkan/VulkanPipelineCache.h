@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_VULKANPIPELINECACHE_H
-#define TNT_FILAMENT_DRIVER_VULKANPIPELINECACHE_H
+#ifndef TNT_FILAMENT_BACKEND_VULKANPIPELINECACHE_H
+#define TNT_FILAMENT_BACKEND_VULKANPIPELINECACHE_H
 
 #include <backend/DriverEnums.h>
 #include <backend/TargetBufferInfo.h>
@@ -38,8 +38,7 @@ VK_DEFINE_HANDLE(VmaAllocator)
 VK_DEFINE_HANDLE(VmaAllocation)
 VK_DEFINE_HANDLE(VmaPool)
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 struct VulkanProgram;
 
@@ -58,10 +57,10 @@ public:
     VulkanPipelineCache& operator=(VulkanPipelineCache const&) = delete;
 
     static constexpr uint32_t UBUFFER_BINDING_COUNT = Program::BINDING_COUNT;
-    static constexpr uint32_t SAMPLER_BINDING_COUNT = backend::MAX_SAMPLER_COUNT;
+    static constexpr uint32_t SAMPLER_BINDING_COUNT = MAX_SAMPLER_COUNT;
     static constexpr uint32_t TARGET_BINDING_COUNT = MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT;
     static constexpr uint32_t SHADER_MODULE_COUNT = 2;
-    static constexpr uint32_t VERTEX_ATTRIBUTE_COUNT = backend::MAX_VERTEX_ATTRIBUTE_COUNT;
+    static constexpr uint32_t VERTEX_ATTRIBUTE_COUNT = MAX_VERTEX_ATTRIBUTE_COUNT;
 
     // Three descriptor set layouts: uniforms, combined image samplers, and input attachments.
     static constexpr uint32_t DESCRIPTOR_TYPE_COUNT = 3;
@@ -290,18 +289,17 @@ private:
 
     // Represents all the Vulkan state that comprises a bound descriptor set.
     struct DescriptorKey {
-        VkBuffer uniformBuffers[UBUFFER_BINDING_COUNT];             // 0
-        DescriptorImageInfo samplers[SAMPLER_BINDING_COUNT];        // 64
-        DescriptorImageInfo inputAttachments[TARGET_BINDING_COUNT]; // 832
-        uint32_t uniformBufferOffsets[UBUFFER_BINDING_COUNT];       // 1024
-        uint32_t uniformBufferSizes[UBUFFER_BINDING_COUNT];         // 1056
+        VkBuffer uniformBuffers[UBUFFER_BINDING_COUNT];             //   96     0
+        DescriptorImageInfo samplers[SAMPLER_BINDING_COUNT];        //  768    96
+        DescriptorImageInfo inputAttachments[TARGET_BINDING_COUNT]; //  192   864
+        uint32_t uniformBufferOffsets[UBUFFER_BINDING_COUNT];       //   48  1056
+        uint32_t uniformBufferSizes[UBUFFER_BINDING_COUNT];         //   48  1104
     };
-
-    static_assert(offsetof(DescriptorKey, samplers)              == 64);
-    static_assert(offsetof(DescriptorKey, inputAttachments)      == 832);
-    static_assert(offsetof(DescriptorKey, uniformBufferOffsets)  == 1024);
-    static_assert(offsetof(DescriptorKey, uniformBufferSizes)    == 1056);
-    static_assert(sizeof(DescriptorKey) == 1088, "DescriptorKey must not have implicit padding.");
+    static_assert(offsetof(DescriptorKey, samplers)              == 96);
+    static_assert(offsetof(DescriptorKey, inputAttachments)      == 864);
+    static_assert(offsetof(DescriptorKey, uniformBufferOffsets)  == 1056);
+    static_assert(offsetof(DescriptorKey, uniformBufferSizes)    == 1104);
+    static_assert(sizeof(DescriptorKey) == 1152, "DescriptorKey must not have implicit padding.");
 
     using DescHashFn = utils::hash::MurmurHashFn<DescriptorKey>;
 
@@ -429,7 +427,6 @@ private:
     VmaAllocation mDummyMemory;
 };
 
-} // namespace filament
-} // namespace backend
+} // namespace filament::backend
 
-#endif // TNT_FILAMENT_DRIVER_VULKANPIPELINECACHE_H
+#endif // TNT_FILAMENT_BACKEND_VULKANPIPELINECACHE_H

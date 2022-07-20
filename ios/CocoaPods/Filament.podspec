@@ -1,12 +1,12 @@
 Pod::Spec.new do |spec|
   spec.name = "Filament"
-  spec.version = "1.20.5"
+  spec.version = "1.25.2"
   spec.license = { :type => "Apache 2.0", :file => "LICENSE" }
   spec.homepage = "https://google.github.io/filament"
   spec.authors = "Google LLC."
   spec.summary = "Filament is a real-time physically based rendering engine for Android, iOS, Windows, Linux, macOS, and WASM/WebGL."
   spec.platform = :ios, "11.0"
-  spec.source = { :http => "https://github.com/google/filament/releases/download/v1.20.5/filament-v1.20.5-ios.tgz" }
+  spec.source = { :http => "https://github.com/google/filament/releases/download/v1.25.2/filament-v1.25.2-ios.tgz" }
 
   # Fix linking error with Xcode 12; we do not yet support the simulator on Apple silicon.
   spec.pod_target_xcconfig = {
@@ -54,9 +54,12 @@ Pod::Spec.new do |spec|
     ss.vendored_libraries =
       "lib/universal/libgltfio_core.a",
       "lib/universal/libdracodec.a",
-      "lib/universal/libgltfio_resources.a"
+      "lib/universal/libuberarchive.a",
+      "lib/universal/libstb.a"
     ss.header_dir = "gltfio"
     ss.dependency "Filament/filament"
+    ss.dependency "Filament/ktxreader"
+    ss.dependency "Filament/uberz"
   end
 
   spec.subspec "camutils" do |ss|
@@ -97,5 +100,37 @@ Pod::Spec.new do |spec|
   spec.subspec "math" do |ss|
     ss.source_files = "include/math/*.h"
     ss.header_dir = "math"
+  end
+
+  spec.subspec "ktxreader" do |ss|
+    ss.source_files = "include/ktxreader/*.h"
+    ss.header_mappings_dir = "include"
+    ss.vendored_libraries =
+        "lib/universal/libktxreader.a",
+        "lib/universal/libbasis_transcoder.a"
+    ss.dependency "Filament/image"
+    ss.dependency "Filament/filament"
+  end
+
+  spec.subspec "viewer" do |ss|
+    ss.source_files = "include/viewer/*.h"
+    ss.header_mappings_dir = "include"
+    ss.vendored_libraries =
+        "lib/universal/libviewer.a",
+        "lib/universal/libcivetweb.a"
+    ss.dependency "Filament/filament"
+    ss.dependency "Filament/gltfio_core"
+  end
+
+  spec.subspec "uberz" do |ss|
+    ss.source_files = "include/uberz/*.h"
+    ss.header_mappings_dir = "include"
+    ss.vendored_libraries =
+        "lib/universal/libuberzlib.a",
+        "lib/universal/libzstd.a"
+    ss.header_dir = "uberz"
+    ss.dependency "Filament/filamat"
+    ss.dependency "Filament/tsl"
+    ss.dependency "Filament/utils"
   end
 end

@@ -144,6 +144,9 @@ make sure the command line tools are setup by running:
 $ xcode-select --install
 ```
 
+If you wish to run the Vulkan backend instead of the default Metal backend, you must install
+the LunarG SDK, enable "System Global Components", and reboot your machine.
+
 Then run `cmake` and `ninja` to trigger a build:
 
 ```
@@ -349,7 +352,7 @@ same version that our continuous builds use.
 
 ```
 cd <your chosen parent folder for the emscripten SDK>
-curl -L https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.5.zip > emsdk.zip
+curl -L https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.9.zip > emsdk.zip
 unzip emsdk.zip ; mv emsdk-* emsdk ; cd emsdk
 python ./emsdk.py install latest
 python ./emsdk.py activate latest

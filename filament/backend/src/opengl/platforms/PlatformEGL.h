@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_H
-#define TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_H
+#ifndef TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_H
+#define TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_H
 
 #include <stdint.h>
 
@@ -26,14 +26,14 @@
 
 #include "private/backend/OpenGLPlatform.h"
 
-namespace filament {
+namespace filament::backend {
 
-class PlatformEGL : public backend::OpenGLPlatform {
+class PlatformEGL : public OpenGLPlatform {
 public:
 
     PlatformEGL() noexcept;
 
-    backend::Driver* createDriver(void* sharedContext) noexcept override;
+    Driver* createDriver(void* sharedContext) noexcept override;
     void terminate() noexcept override;
 
     SwapChain* createSwapChain(void* nativewindow, uint64_t& flags) noexcept override;
@@ -45,7 +45,7 @@ public:
     bool canCreateFence() noexcept override { return true; }
     Fence* createFence() noexcept override;
     void destroyFence(Fence* fence) noexcept override;
-    backend::FenceStatus waitFence(Fence* fence, uint64_t timeout) noexcept override;
+    FenceStatus waitFence(Fence* fence, uint64_t timeout) noexcept override;
 
     void createExternalImageTexture(void* texture) noexcept override;
     void destroyExternalImage(void* texture) noexcept override;
@@ -62,13 +62,9 @@ public:
     void detach(Stream* stream) noexcept override {}
     void updateTexImage(Stream* stream, int64_t* timestamp) noexcept override {}
 
-    ExternalTexture* createExternalTextureStorage() noexcept override { return nullptr; }
-    void reallocateExternalStorage(ExternalTexture* ets,
-            uint32_t w, uint32_t h, backend::TextureFormat format) noexcept override {}
-    void destroyExternalTextureStorage(ExternalTexture* ets) noexcept override {}
-
 protected:
     static void logEglError(const char* name) noexcept;
+    static void clearGlError() noexcept;
 
     EGLBoolean makeCurrent(EGLSurface drawSurface, EGLSurface readSurface) noexcept;
     void initializeGlExtensions() noexcept;
@@ -87,6 +83,6 @@ protected:
     } ext;
 };
 
-} // namespace filament
+} // namespace filament::backend
 
-#endif // TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_EGL_H
+#endif // TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_EGL_H
