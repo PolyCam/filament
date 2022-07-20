@@ -29,26 +29,26 @@ set(SRCS
         src/FilamentApp.cpp
         src/IBL.cpp
         src/IcoSphere.cpp
-        src/Image.cpp
         src/MeshAssimp.cpp
         src/Sphere.cpp
 )
 
 set(LIBS
         assimp
+        camutils
+        filagui
+        filamat
         filament
         filament-iblprefilter
+        geometry
+        getopt
+        image
+        imgui
+        ktxreader
+        math
         sdl2
         stb
-        math
-        filamat
         utils
-        getopt
-        imgui
-        filagui
-        image
-        camutils
-        geometry
 )
 
 set(MATERIAL_SRCS

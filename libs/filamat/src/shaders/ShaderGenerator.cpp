@@ -28,6 +28,8 @@
 #include "CodeGenerator.h"
 #include "../UibGenerator.h"
 
+#include <iterator>
+
 namespace filamat {
 
 using namespace filament;
@@ -393,6 +395,8 @@ std::string ShaderGenerator::createFragmentProgram(ShaderModel shaderModel,
             filament::Variant::isSSRVariant(variant));
 
     // material defines
+    CodeGenerator::generateDefine(fs, "MATERIAL_HAS_INSTANCES", material.instanced);
+
     CodeGenerator::generateDefine(fs, "MATERIAL_HAS_DOUBLE_SIDED_CAPABILITY",
             material.hasDoubleSidedCapability);
     switch (material.blendingMode) {
@@ -535,9 +539,6 @@ std::string ShaderGenerator::createPostProcessVertexProgram(
 
     CodeGenerator::generateDefine(vs, "LOCATION_POSITION", uint32_t(VertexAttribute::POSITION));
 
-    // The UVs are at the location immediately following the custom variables.
-    CodeGenerator::generateDefine(vs, "LOCATION_UVS", uint32_t(MaterialBuilder::MATERIAL_VARIABLES_COUNT));
-
     // custom material variables
     size_t variableIndex = 0;
     for (const auto& variable : mVariables) {
@@ -556,7 +557,7 @@ std::string ShaderGenerator::createPostProcessVertexProgram(
             material.samplerBindings.getBlockOffset(BindingPoints::PER_MATERIAL_INSTANCE),
             material.sib);
 
-    CodeGenerator::generateCommon(vs, ShaderType::VERTEX);
+    CodeGenerator::generatePostProcessCommon(vs, ShaderType::VERTEX);
     CodeGenerator::generatePostProcessGetters(vs, ShaderType::VERTEX);
 
     appendShader(vs, mMaterialVertexCode, mMaterialVertexLineOffset);
@@ -576,9 +577,6 @@ std::string ShaderGenerator::createPostProcessFragmentProgram(
     cg.generateProlog(fs, ShaderType::FRAGMENT, false);
 
     cg.generateQualityDefine(fs, material.quality);
-
-    // The UVs are at the location immediately following the custom variables.
-    CodeGenerator::generateDefine(fs, "LOCATION_UVS", uint32_t(MaterialBuilder::MATERIAL_VARIABLES_COUNT));
 
     generatePostProcessMaterialVariantDefines(fs, PostProcessVariant(variant));
 
@@ -600,7 +598,7 @@ std::string ShaderGenerator::createPostProcessFragmentProgram(
     // subpass
     CodeGenerator::generateSubpass(fs, material.subpass);
 
-    CodeGenerator::generateCommon(fs, ShaderType::FRAGMENT);
+    CodeGenerator::generatePostProcessCommon(fs, ShaderType::FRAGMENT);
     CodeGenerator::generatePostProcessGetters(fs, ShaderType::FRAGMENT);
 
     // Generate post-process outputs.

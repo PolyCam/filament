@@ -28,7 +28,6 @@
 #include <utils/CString.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Panic.h>
-#include <utils/trap.h>
 
 #ifndef NDEBUG
 #include <set>
@@ -53,7 +52,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugReportCallback(VkDebugReportFlagsEXT flags,
         int32_t messageCode, const char* pLayerPrefix, const char* pMessage, void* pUserData) {
     if (flags & VK_DEBUG_REPORT_ERROR_BIT_EXT) {
         utils::slog.e << "VULKAN ERROR: (" << pLayerPrefix << ") " << pMessage << utils::io::endl;
-        utils::debug_trap();
     } else {
         utils::slog.w << "VULKAN WARNING: (" << pLayerPrefix << ") "
                 << pMessage << utils::io::endl;
@@ -68,7 +66,6 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFla
     if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         utils::slog.e << "VULKAN ERROR: (" << cbdata->pMessageIdName << ") "
                 << cbdata->pMessage << utils::io::endl;
-        utils::debug_trap();
     } else {
         // TODO: emit best practices warnings about aggressive pipeline barriers.
         if (strstr(cbdata->pMessage, "ALL_GRAPHICS_BIT") || strstr(cbdata->pMessage, "ALL_COMMANDS_BIT")) {
@@ -85,17 +82,19 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsCallback(VkDebugUtilsMessageSeverityFla
 
 #endif
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 Driver* VulkanDriverFactory::create(VulkanPlatform* const platform,
         const char* const* ppRequiredExtensions, uint32_t requiredExtensionCount) noexcept {
     return VulkanDriver::create(platform, ppRequiredExtensions, requiredExtensionCount);
 }
 
+Dispatcher VulkanDriver::getDispatcher() const noexcept {
+    return ConcreteDispatcher<VulkanDriver>::make();
+}
+
 VulkanDriver::VulkanDriver(VulkanPlatform* platform,
         const char* const* ppRequiredExtensions, uint32_t requiredExtensionCount) noexcept :
-        DriverBase(new ConcreteDispatcher<VulkanDriver>()),
         mHandleAllocator("Handles", FILAMENT_VULKAN_HANDLE_ARENA_SIZE_IN_MB * 1024U * 1024U),
         mContextManager(*platform),
         mStagePool(mContext),
@@ -116,7 +115,8 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     for  (const auto& extProps : availableExts) {
         if (!strcmp(extProps.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
             mContext.debugUtilsSupported = true;
-            break;
+        } else if (!strcmp(extProps.extensionName, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+            mContext.portabilityEnumerationSupported = true;
         }
     }
 
@@ -185,18 +185,21 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     uint32_t enabledExtensionCount = 0;
 
     // Request all cross-platform extensions.
-    ppEnabledExtensions[enabledExtensionCount++] = "VK_KHR_surface";
-    ppEnabledExtensions[enabledExtensionCount++] = "VK_KHR_get_physical_device_properties2";
+    ppEnabledExtensions[enabledExtensionCount++] = VK_KHR_SURFACE_EXTENSION_NAME;
+    ppEnabledExtensions[enabledExtensionCount++] = VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME;
 #if VK_ENABLE_VALIDATION
 #if defined(__ANDROID__)
-    ppEnabledExtensions[enabledExtensionCount++] = "VK_EXT_debug_report";
+    ppEnabledExtensions[enabledExtensionCount++] = VK_EXT_DEBUG_REPORT_EXTENSION_NAME;
 #endif
     if (validationFeaturesSupported) {
-        ppEnabledExtensions[enabledExtensionCount++] = "VK_EXT_validation_features";
+        ppEnabledExtensions[enabledExtensionCount++] = VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME;
     }
 #endif
     if (mContext.debugUtilsSupported) {
-        ppEnabledExtensions[enabledExtensionCount++] = "VK_EXT_debug_utils";
+        ppEnabledExtensions[enabledExtensionCount++] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+    }
+    if (mContext.portabilityEnumerationSupported) {
+        ppEnabledExtensions[enabledExtensionCount++] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
     }
 
     // Request platform-specific extensions.
@@ -208,11 +211,15 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     // Create the Vulkan instance.
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.apiVersion = VK_MAKE_VERSION(VK_REQUIRED_VERSION_MAJOR, VK_REQUIRED_VERSION_MINOR, 0);
+    appInfo.apiVersion = VK_MAKE_API_VERSION(0,
+            VK_REQUIRED_VERSION_MAJOR, VK_REQUIRED_VERSION_MINOR, 0);
     instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceCreateInfo.pApplicationInfo = &appInfo;
     instanceCreateInfo.enabledExtensionCount = enabledExtensionCount;
     instanceCreateInfo.ppEnabledExtensionNames = ppEnabledExtensions;
+    if (mContext.portabilityEnumerationSupported) {
+        instanceCreateInfo.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
 
     VkValidationFeaturesEXT features = {};
     VkValidationFeatureEnableEXT enables[] = {
@@ -228,6 +235,11 @@ VulkanDriver::VulkanDriver(VulkanPlatform* platform,
     }
 
     VkResult result = vkCreateInstance(&instanceCreateInfo, VKALLOC, &mContext.instance);
+#ifndef NDEBUG
+    if (result != VK_SUCCESS) {
+        utils::slog.e << "Unable to create instance: " << result << utils::io::endl;
+    }
+#endif
     ASSERT_POSTCONDITION(result == VK_SUCCESS, "Unable to create Vulkan instance.");
     bluevk::bindInstance(mContext.instance);
     UTILS_UNUSED const PFN_vkCreateDebugReportCallbackEXT createDebugReportCallback =
@@ -335,8 +347,6 @@ void VulkanDriver::terminate() {
     mFramebufferCache.reset();
     mSamplerCache.reset();
 
-    vmaDestroyPool(mContext.allocator, mContext.vmaPoolGPU);
-    vmaDestroyPool(mContext.allocator, mContext.vmaPoolCPU);
     vmaDestroyAllocator(mContext.allocator);
 
     vkDestroyQueryPool(mContext.device, mContext.timestamps.pool, VKALLOC);
@@ -373,12 +383,12 @@ void VulkanDriver::beginFrame(int64_t monotonic_clock_ns, uint32_t frameId) {
 }
 
 void VulkanDriver::setFrameScheduledCallback(Handle<HwSwapChain> sch,
-        backend::FrameScheduledCallback callback, void* user) {
+        FrameScheduledCallback callback, void* user) {
 
 }
 
 void VulkanDriver::setFrameCompletedCallback(Handle<HwSwapChain> sch,
-        backend::FrameCompletedCallback callback, void* user) {
+        FrameCompletedCallback callback, void* user) {
 
 }
 
@@ -403,8 +413,13 @@ void VulkanDriver::createSamplerGroupR(Handle<HwSamplerGroup> sbh, uint32_t coun
     construct<VulkanSamplerGroup>(sbh, count);
 }
 
-void VulkanDriver::createRenderPrimitiveR(Handle<HwRenderPrimitive> rph, int) {
+void VulkanDriver::createRenderPrimitiveR(Handle<HwRenderPrimitive> rph,
+        Handle<HwVertexBuffer> vbh, Handle<HwIndexBuffer> ibh,
+        PrimitiveType pt, uint32_t offset,
+        uint32_t minIndex, uint32_t maxIndex, uint32_t count) {
     construct<VulkanRenderPrimitive>(rph);
+    VulkanDriver::setRenderPrimitiveBuffer(rph, vbh, ibh);
+    VulkanDriver::setRenderPrimitiveRange(rph, pt, offset, minIndex, maxIndex, count);
 }
 
 void VulkanDriver::destroyRenderPrimitive(Handle<HwRenderPrimitive> rph) {
@@ -531,7 +546,11 @@ void VulkanDriver::createDefaultRenderTargetR(Handle<HwRenderTarget> rth, int) {
 
 void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
         TargetBufferFlags targets, uint32_t width, uint32_t height, uint8_t samples,
-        backend::MRT color, TargetBufferInfo depth, TargetBufferInfo stencil) {
+        MRT color, TargetBufferInfo depth, TargetBufferInfo stencil) {
+    UTILS_UNUSED_IN_RELEASE math::vec2<uint32_t> tmin = {std::numeric_limits<uint32_t>::max()};
+    UTILS_UNUSED_IN_RELEASE math::vec2<uint32_t> tmax = {0};
+    UTILS_UNUSED_IN_RELEASE size_t attachmentCount = 0;
+
     VulkanAttachment colorTargets[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT] = {};
     for (int i = 0; i < MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT; i++) {
         if (color[i].handle) {
@@ -541,7 +560,9 @@ void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
                 .layer = color[i].layer,
             };
             UTILS_UNUSED_IN_RELEASE VkExtent2D extent = colorTargets[i].getExtent2D();
-            assert_invariant(extent.width >= width && extent.height >= height);
+            tmin = { std::min(tmin.x, extent.width), std::min(tmin.y, extent.height) };
+            tmax = { std::max(tmax.x, extent.width), std::max(tmax.y, extent.height) };
+            attachmentCount++;
         }
     }
 
@@ -553,7 +574,9 @@ void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
             .layer = depth.layer,
         };
         UTILS_UNUSED_IN_RELEASE VkExtent2D extent = depthStencil[0].getExtent2D();
-        assert_invariant(extent.width >= width && extent.height >= height);
+        tmin = { std::min(tmin.x, extent.width), std::min(tmin.y, extent.height) };
+        tmax = { std::max(tmax.x, extent.width), std::max(tmax.y, extent.height) };
+        attachmentCount++;
     }
 
     if (stencil.handle) {
@@ -563,8 +586,16 @@ void VulkanDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
             .layer = stencil.layer,
         };
         UTILS_UNUSED_IN_RELEASE VkExtent2D extent = depthStencil[1].getExtent2D();
-        assert_invariant(extent.width >= width && extent.height >= height);
+        tmin = { std::min(tmin.x, extent.width), std::min(tmin.y, extent.height) };
+        tmax = { std::max(tmax.x, extent.width), std::max(tmax.y, extent.height) };
+        attachmentCount++;
     }
+
+    // All attachments must have the same dimensions, which must be greater than or equal to the
+    // render target dimensions.
+    assert_invariant(attachmentCount > 0);
+    assert_invariant(tmin == tmax);
+    assert_invariant(tmin.x >= width && tmin.y >= height);
 
     auto renderTarget = construct<VulkanRenderTarget>(rth, mContext,
             width, height, samples, colorTargets, depthStencil, mStagePool);
@@ -604,10 +635,6 @@ void VulkanDriver::createSwapChainHeadlessR(Handle<HwSwapChain> sch,
         uint32_t width, uint32_t height, uint64_t flags) {
     assert_invariant(width > 0 && height > 0 && "Vulkan requires non-zero swap chain dimensions.");
     construct<VulkanSwapChain>(sch, mContext, mStagePool, width, height);
-}
-
-void VulkanDriver::createStreamFromTextureIdR(Handle<HwStream> sh, intptr_t externalTextureId,
-        uint32_t width, uint32_t height) {
 }
 
 void VulkanDriver::createTimerQueryR(Handle<HwTimerQuery> tqh, int) {
@@ -676,10 +703,6 @@ Handle<HwSwapChain> VulkanDriver::createSwapChainHeadlessS() noexcept {
     return allocHandle<VulkanSwapChain>();
 }
 
-Handle<HwStream> VulkanDriver::createStreamFromTextureIdS() noexcept {
-    return {};
-}
-
 Handle<HwTimerQuery> VulkanDriver::createTimerQueryS() noexcept {
     // The handle must be constructed here, as a synchronous call to getTimerQueryValue might happen
     // before createTimerQueryR is executed.
@@ -744,7 +767,7 @@ Handle<HwStream> VulkanDriver::createStreamAcquired() {
 }
 
 void VulkanDriver::setAcquiredImage(Handle<HwStream> sh, void* image,
-        backend::CallbackHandler* handler, backend::StreamCallback cb, void* userData) {
+        CallbackHandler* handler, StreamCallback cb, void* userData) {
 }
 
 void VulkanDriver::setStreamDimensions(Handle<HwStream> sh, uint32_t width, uint32_t height) {
@@ -799,7 +822,7 @@ bool VulkanDriver::isTextureSwizzleSupported() {
     return true;
 }
 
-bool VulkanDriver::isTextureFormatMipmappable(backend::TextureFormat format) {
+bool VulkanDriver::isTextureFormatMipmappable(TextureFormat format) {
     switch (format) {
         case TextureFormat::DEPTH16:
         case TextureFormat::DEPTH24:
@@ -863,7 +886,7 @@ math::float2 VulkanDriver::getClipSpaceParams() {
 }
 
 uint8_t VulkanDriver::getMaxDrawBuffers() {
-    return backend::MRT::MIN_SUPPORTED_RENDER_TARGET_COUNT; // TODO: query real value
+    return MRT::MIN_SUPPORTED_RENDER_TARGET_COUNT; // TODO: query real value
 }
 
 void VulkanDriver::setVertexBufferObject(Handle<HwVertexBuffer> vbh, uint32_t index,
@@ -888,6 +911,24 @@ void VulkanDriver::updateBufferObject(Handle<HwBufferObject> boh, BufferDescript
     bo->buffer.loadFromCpu(mContext, mStagePool, bd.buffer, byteOffset, bd.size);
     mDisposer.acquire(bo);
     scheduleDestroy(std::move(bd));
+}
+
+void VulkanDriver::updateBufferObjectUnsynchronized(Handle<HwBufferObject> boh,
+        BufferDescriptor&& bd, uint32_t byteOffset) {
+    auto bo = handle_cast<VulkanBufferObject*>(boh);
+    // TODO: implement unsynchronized version
+    bo->buffer.loadFromCpu(mContext, mStagePool, bd.buffer, byteOffset, bd.size);
+    mDisposer.acquire(bo);
+    scheduleDestroy(std::move(bd));
+}
+
+void VulkanDriver::resetBufferObject(Handle<HwBufferObject> boh) {
+    // TODO: implement resetBufferObject(). This is equivalent to calling
+    // destroyBufferObject() followed by createBufferObject() keeping the same handle.
+    // It is actually okay to keep a no-op implementation, the intention here is to "orphan" the
+    // buffer (and possibly return it to a pool) and allocate a new one (or get it from a pool),
+    // so that no further synchronization with the GPU is needed.
+    // This is only useful if updateBufferObjectUnsynchronized() is implemented unsynchronizedly.
 }
 
 void VulkanDriver::update2DImage(Handle<HwTexture> th,
@@ -1606,14 +1647,8 @@ void VulkanDriver::readPixels(Handle<HwRenderTarget> src, uint32_t x, uint32_t y
     vkMapMemory(device, stagingMemory, 0, VK_WHOLE_SIZE, 0, (void**) &srcPixels);
     srcPixels += subResourceLayout.offset;
 
-    // NOTE: the reasons for this are unclear, but issuing ReadPixels on a VkImage that has been
-    // extracted from a swap chain does not need a Y flip, but explicitly created VkImages do. (The
-    // former can be tested with "Export Screenshots" in gltf_viewer, the latter can be tested with
-    // test_ReadPixels.cpp). We've seen this behavior with both SwiftShader and MoltenVK.
-    const bool flipY = !srcTarget->isSwapChain();
-
-    if (!DataReshaper::reshapeImage(&pbd, getComponentType(srcFormat), srcPixels,
-            subResourceLayout.rowPitch, width, height, swizzle, flipY)) {
+    if (!DataReshaper::reshapeImage(&pbd, getComponentType(srcFormat), getComponentCount(srcFormat),
+                srcPixels, subResourceLayout.rowPitch, width, height, swizzle)) {
         utils::slog.e << "Unsupported PixelDataFormat or PixelDataType" << utils::io::endl;
     }
 
@@ -1625,11 +1660,6 @@ void VulkanDriver::readPixels(Handle<HwRenderTarget> src, uint32_t x, uint32_t y
     });
 
     scheduleDestroy(std::move(pbd));
-}
-
-void VulkanDriver::readStreamPixels(Handle<HwStream> sh, uint32_t x, uint32_t y, uint32_t width,
-        uint32_t height, PixelBufferDescriptor&& p) {
-    scheduleDestroy(std::move(p));
 }
 
 void VulkanDriver::blit(TargetBufferFlags buffers, Handle<HwRenderTarget> dst, Viewport dstRect,
@@ -1650,19 +1680,21 @@ void VulkanDriver::blit(TargetBufferFlags buffers, Handle<HwRenderTarget> dst, V
 
     VkFilter vkfilter = filter == SamplerMagFilter::NEAREST ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
 
+    // The Y inversion below makes it so that Vk matches GL and Metal.
+
     const VkExtent2D srcExtent = srcTarget->getExtent();
-    const int32_t srcLeft = std::min(srcRect.left, (int32_t) srcExtent.width);
-    const int32_t srcBottom = std::min(srcRect.bottom, (int32_t) srcExtent.height);
-    const int32_t srcRight = std::min(srcRect.left + srcRect.width, srcExtent.width);
-    const int32_t srcTop = std::min(srcRect.bottom + srcRect.height, srcExtent.height);
-    const VkOffset3D srcOffsets[2] = { { srcLeft, srcBottom, 0 }, { srcRight, srcTop, 1 }};
+    const int32_t srcLeft = srcRect.left;
+    const int32_t srcTop = srcExtent.height - srcRect.bottom - srcRect.height;
+    const int32_t srcRight = srcRect.left + srcRect.width;
+    const int32_t srcBottom = srcTop + srcRect.height;
+    const VkOffset3D srcOffsets[2] = { { srcLeft, srcTop, 0 }, { srcRight, srcBottom, 1 }};
 
     const VkExtent2D dstExtent = dstTarget->getExtent();
-    const int32_t dstLeft = std::min(dstRect.left, (int32_t) dstExtent.width);
-    const int32_t dstBottom = std::min(dstRect.bottom, (int32_t) dstExtent.height);
-    const int32_t dstRight = std::min(dstRect.left + dstRect.width, dstExtent.width);
-    const int32_t dstTop = std::min(dstRect.bottom + dstRect.height, dstExtent.height);
-    const VkOffset3D dstOffsets[2] = { { dstLeft, dstBottom, 0 }, { dstRight, dstTop, 1 }};
+    const int32_t dstLeft = dstRect.left;
+    const int32_t dstTop = dstExtent.height - dstRect.bottom - dstRect.height;
+    const int32_t dstRight = dstRect.left + dstRect.width;
+    const int32_t dstBottom = dstTop + dstRect.height;
+    const VkOffset3D dstOffsets[2] = { { dstLeft, dstTop, 0 }, { dstRight, dstBottom, 1 }};
 
     if (any(buffers & TargetBufferFlags::DEPTH) && srcTarget->hasDepth() && dstTarget->hasDepth()) {
         mBlitter.blitDepth({dstTarget, dstOffsets, srcTarget, srcOffsets});
@@ -1722,8 +1754,8 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
 
     // Declare fixed-size arrays that get passed to the pipeCache and to vkCmdBindVertexBuffers.
     VulkanPipelineCache::VertexArray varray = {};
-    VkBuffer buffers[backend::MAX_VERTEX_ATTRIBUTE_COUNT] = {};
-    VkDeviceSize offsets[backend::MAX_VERTEX_ATTRIBUTE_COUNT] = {};
+    VkBuffer buffers[MAX_VERTEX_ATTRIBUTE_COUNT] = {};
+    VkDeviceSize offsets[MAX_VERTEX_ATTRIBUTE_COUNT] = {};
 
     // For each attribute, append to each of the above lists.
     const uint32_t bufferCount = prim.vertexBuffer->attributes.size();
@@ -1879,7 +1911,7 @@ void VulkanDriver::draw(PipelineState pipelineState, Handle<HwRenderPrimitive> r
     const uint32_t indexCount = prim.count;
     const uint32_t firstIndex = prim.offset / prim.indexBuffer->elementSize;
     const int32_t vertexOffset = 0;
-    const uint32_t firstInstId = 1;
+    const uint32_t firstInstId = 0;
     vkCmdDrawIndexed(cmdbuffer, indexCount, instanceCount, firstIndex, vertexOffset, firstInstId);
 }
 
@@ -1934,7 +1966,6 @@ void VulkanDriver::debugCommandBegin(CommandStream* cmds, bool synchronous, cons
         inRenderPass = false;
     } else if (inRenderPass && OUTSIDE_COMMANDS.find(command) != OUTSIDE_COMMANDS.end()) {
         utils::slog.e << command.c_str() << " issued inside a render pass." << utils::io::endl;
-        utils::debug_trap();
     }
 #endif
 }
@@ -1942,7 +1973,6 @@ void VulkanDriver::debugCommandBegin(CommandStream* cmds, bool synchronous, cons
 // explicit instantiation of the Dispatcher
 template class ConcreteDispatcher<VulkanDriver>;
 
-} // namespace backend
-} // namespace filament
+} // namespace filament::backend
 
 #pragma clang diagnostic pop

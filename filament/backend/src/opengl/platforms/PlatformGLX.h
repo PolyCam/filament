@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_GLX_H
-#define TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_GLX_H
+#ifndef TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_GLX_H
+#define TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_GLX_H
 
 #include <stdint.h>
 
@@ -28,12 +28,12 @@
 
 #include <vector>
 
-namespace filament {
+namespace filament::backend {
 
-class PlatformGLX final : public backend::OpenGLPlatform {
+class PlatformGLX final : public OpenGLPlatform {
 public:
 
-    backend::Driver* createDriver(void* const sharedGLContext) noexcept override;
+    Driver* createDriver(void* const sharedGLContext) noexcept override;
 
     void terminate() noexcept override;
 
@@ -45,7 +45,7 @@ public:
 
     Fence* createFence() noexcept override;
     void destroyFence(Fence* fence) noexcept override;
-    backend::FenceStatus waitFence(Fence* fence, uint64_t timeout) noexcept override;
+    FenceStatus waitFence(Fence* fence, uint64_t timeout) noexcept override;
 
     void setPresentationTime(int64_t time) noexcept final override {}
 
@@ -54,11 +54,6 @@ public:
     void attach(Stream* stream, intptr_t tname) noexcept final override {}
     void detach(Stream* stream) noexcept final override {}
     void updateTexImage(Stream* stream, int64_t* timestamp) noexcept final override {}
-
-    ExternalTexture* createExternalTextureStorage() noexcept final override { return nullptr; }
-    void reallocateExternalStorage(ExternalTexture* ets,
-            uint32_t w, uint32_t h, backend::TextureFormat format) noexcept final override { }
-    void destroyExternalTextureStorage(ExternalTexture* ets) noexcept final override { }
 
     int getOSVersion() const noexcept final override { return 0; }
 
@@ -70,6 +65,6 @@ private:
     std::vector<GLXPbuffer> mPBuffers;
 };
 
-} // namespace filament
+} // namespace filament::backend
 
-#endif // TNT_FILAMENT_DRIVER_OPENGL_PLATFORM_GLX_H
+#endif // TNT_FILAMENT_BACKEND_OPENGL_OPENGL_PLATFORM_GLX_H

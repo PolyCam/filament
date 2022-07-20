@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_VULKANCONTEXT_H
-#define TNT_FILAMENT_DRIVER_VULKANCONTEXT_H
+#ifndef TNT_FILAMENT_BACKEND_VULKANCONTEXT_H
+#define TNT_FILAMENT_BACKEND_VULKANCONTEXT_H
 
 #include "VulkanPipelineCache.h"
 #include "VulkanCommands.h"
@@ -28,8 +28,7 @@
 VK_DEFINE_HANDLE(VmaAllocator)
 VK_DEFINE_HANDLE(VmaPool)
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 struct VulkanRenderTarget;
 struct VulkanSwapChain;
@@ -83,6 +82,7 @@ struct VulkanContext {
     bool debugMarkersSupported = false;
     bool debugUtilsSupported = false;
     bool portabilitySubsetSupported = false;
+    bool portabilityEnumerationSupported = false;
     bool maintenanceSupported[3] = {};
     VulkanPipelineCache::RasterState rasterState;
     VulkanSwapChain* currentSwapChain;
@@ -91,14 +91,11 @@ struct VulkanContext {
     VkViewport viewport;
     VkFormat finalDepthFormat;
     VmaAllocator allocator;
-    VmaPool vmaPoolGPU;
-    VmaPool vmaPoolCPU;
     VulkanTexture* emptyTexture = nullptr;
     VulkanCommands* commands = nullptr;
     std::string currentDebugMarker;
 };
 
-} // namespace filament
-} // namespace backend
+} // namespace filament::backend
 
-#endif // TNT_FILAMENT_DRIVER_VULKANCONTEXT_H
+#endif // TNT_FILAMENT_BACKEND_VULKANCONTEXT_H

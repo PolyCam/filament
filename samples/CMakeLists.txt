@@ -148,12 +148,11 @@ endfunction()
 
 add_mesh("assets/models/monkey/monkey.obj" "suzanne.filamesh")
 
-# Use a RGBA compression format for Metal and Vulkan support.
-set (COMPRESSION "--compression=s3tc_rgba_dxt5")
-add_ktxfiles("assets/models/monkey/albedo.png" "albedo_s3tc.ktx" "${COMPRESSION}")
-add_ktxfiles("assets/models/monkey/roughness.png" "roughness.ktx" "${COMPRESSION};--grayscale")
-add_ktxfiles("assets/models/monkey/metallic.png" "metallic.ktx" "${COMPRESSION};--grayscale")
-add_ktxfiles("assets/models/monkey/ao.png" "ao.ktx" "${COMPRESSION};--grayscale")
+set (COMPRESSION "--compression=uastc")
+add_ktxfiles("assets/models/monkey/albedo.png" "albedo.ktx2" "${COMPRESSION}")
+add_ktxfiles("assets/models/monkey/roughness.png" "roughness.ktx2" "${COMPRESSION};--grayscale;--linear")
+add_ktxfiles("assets/models/monkey/metallic.png" "metallic.ktx2" "${COMPRESSION};--grayscale;--linear")
+add_ktxfiles("assets/models/monkey/ao.png" "ao.ktx2" "${COMPRESSION};--grayscale;--linear")
 
 add_pngfile("assets/models/monkey/normal.png" "normal.png")
 
@@ -173,29 +172,29 @@ endif()
 add_library(suzanne-resources ${DUMMY_SRC} ${RESGEN_SOURCE})
 
 # ==================================================================================================
-# Resources for gltf_viewer
+# Resources for gltf_viewer and gltf_instances
 # ==================================================================================================
 
-add_library(gltf-resources ${DUMMY_SRC})
+add_library(gltf-demo-resources ${DUMMY_SRC})
 
-set(GLTF_VIEWER_RESOURCE_FILES
+set(GLTF_DEMO_RESOURCES
     ${ROOT_DIR}/third_party/models/DamagedHelmet/DamagedHelmet.glb
     ${MATERIAL_DIR}/groundShadow.filamat
 )
 
-get_resgen_vars(${RESOURCE_DIR} gltf_viewer)
+get_resgen_vars(${RESOURCE_DIR} gltf_demo)
 
 add_custom_command(
         OUTPUT ${RESGEN_OUTPUTS}
-        COMMAND resgen ${RESGEN_FLAGS} ${GLTF_VIEWER_RESOURCE_FILES}
-        DEPENDS resgen ${GLTF_VIEWER_RESOURCE_FILES}
+        COMMAND resgen ${RESGEN_FLAGS} ${GLTF_DEMO_RESOURCES}
+        DEPENDS resgen ${GLTF_DEMO_RESOURCES}
 )
 
 if (DEFINED RESGEN_SOURCE_FLAGS)
     set_source_files_properties(${RESGEN_SOURCE} PROPERTIES COMPILE_FLAGS ${RESGEN_SOURCE_FLAGS})
 endif()
 
-target_sources(gltf-resources PRIVATE ${RESGEN_SOURCE})
+target_sources(gltf-demo-resources PRIVATE ${RESGEN_SOURCE})
 
 # ==================================================================================================
 # Compiler flags
@@ -248,8 +247,8 @@ if (NOT ANDROID)
 
     # Sample app specific
     target_link_libraries(frame_generator PRIVATE imageio)
-    target_link_libraries(gltf_viewer PRIVATE gltf-resources gltfio viewer)
-    target_link_libraries(gltf_instances PRIVATE gltf-resources gltfio viewer)
+    target_link_libraries(gltf_viewer PRIVATE gltf-demo-resources uberarchive gltfio viewer)
+    target_link_libraries(gltf_instances PRIVATE gltf-demo-resources uberarchive gltfio viewer)
     target_link_libraries(hellopbr PRIVATE filameshio suzanne-resources)
     target_link_libraries(image_viewer PRIVATE viewer imageio)
     target_link_libraries(multiple_windows PRIVATE filameshio suzanne-resources)
@@ -267,28 +266,6 @@ if (NOT ANDROID)
     # Install resources
     install(DIRECTORY ${PROJECT_BINARY_DIR}/assets/fonts DESTINATION bin/assets)
     install(DIRECTORY ${PROJECT_BINARY_DIR}/assets/ibl/ DESTINATION bin/assets)
-endif()
-
-# ==================================================================================================
-# Copy the MoltenVK dylibs and JSON on MacOS
-# ==================================================================================================
-
-if (APPLE AND NOT Vulkan_LIBRARY AND NOT FILAMENT_USE_SWIFTSHADER)
-    message(STATUS "No Vulkan SDK was found, using prebuilt MoltenVK.")
-    set(MOLTENVK_DIR "../third_party/moltenvk")
-    configure_file(
-            ${MOLTENVK_DIR}/libvulkan.1.dylib
-            ${PROJECT_BINARY_DIR}/libvulkan.1.dylib COPYONLY)
-    configure_file(
-            ${MOLTENVK_DIR}/MoltenVK_icd.json
-            ${PROJECT_BINARY_DIR}/MoltenVK_icd.json COPYONLY)
-    configure_file(
-            ${MOLTENVK_DIR}/libMoltenVK.dylib
-            ${PROJECT_BINARY_DIR}/libMoltenVK.dylib COPYONLY)
-    list(APPEND APP_SRCS
-            ${PROJECT_BINARY_DIR}/libvulkan.1.dylib
-            ${PROJECT_BINARY_DIR}/MoltenVK_icd.json
-            ${PROJECT_BINARY_DIR}/libMoltenVK.dylib)
 endif()
 
 # ==================================================================================================

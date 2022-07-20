@@ -133,6 +133,7 @@ inline bool getPrimitiveType(cgltf_primitive_type in,
             return true;
         case cgltf_primitive_type_line_loop:
         case cgltf_primitive_type_triangle_fan:
+        case cgltf_primitive_type_max_enum:
             return false;
     }
     return false;
@@ -261,13 +262,6 @@ inline bool getElementType(cgltf_type type, cgltf_component_type ctype,
             return false;
     }
     return false;
-}
-
-inline bool requiresConversion(cgltf_type type, cgltf_component_type ctype) {
-    filament::VertexBuffer::AttributeType permitted;
-    filament::VertexBuffer::AttributeType actual;
-    bool supported = getElementType(type, ctype, &permitted, &actual);
-    return supported && permitted != actual;
 }
 
 #endif // GLTFIO_GLTFENUMS_H

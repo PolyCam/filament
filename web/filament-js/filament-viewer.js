@@ -15,7 +15,7 @@
 */
 
 // If you are bundling this with rollup, webpack, or esbuild, the following URL should be trimmed.
-import { LitElement, html, css } from "https://unpkg.com/lit-element?module";
+import { LitElement, html, css } from "https://unpkg.com/lit?module";
 
 // This little utility checks if the Filament module is ready for action.
 // If so, it immediately calls the given function. If not, it asks the Filament
@@ -63,6 +63,7 @@ class FilamentViewer extends LitElement {
         this.sky = null;          // Path to skybox ktx.
         this.enableDrop = null;   // Enables drag and drop.
         this.intensity = 30000;   // Intensity of the image based light.
+        this.materialVariant = 0; // Index of material variant.
 
         // Private properties:
         this.filamentTasks = new FilamentTasks();
@@ -79,6 +80,7 @@ class FilamentViewer extends LitElement {
             sky: { type: String },
             enableDrop: { type: Boolean },
             intensity: { type: Number },
+            materialVariant: { type: Number },
         }
     }
 
@@ -111,6 +113,7 @@ class FilamentViewer extends LitElement {
         if (props.has("intensity") && this.indirectLight) {
             this.indirectLight.setIntensity(this.intensity);
         }
+        if (props.has("materialVariant") && this.asset) this._applyMaterialVariant();
     }
 
     static get styles() {
@@ -243,7 +246,7 @@ class FilamentViewer extends LitElement {
             return response.arrayBuffer();
         }).then(arrayBuffer => {
             const ktxData = new Uint8Array(arrayBuffer);
-            this.indirectLight = this.engine.createIblFromKtx(ktxData);
+            this.indirectLight = this.engine.createIblFromKtx1(ktxData);
             this.indirectLight.setIntensity(this.intensity);
             this.scene.setIndirectLight(this.indirectLight);
         });
@@ -261,7 +264,7 @@ class FilamentViewer extends LitElement {
             return response.arrayBuffer();
         }).then(arrayBuffer => {
             const ktxData = new Uint8Array(arrayBuffer);
-            this.skybox = this.engine.createSkyFromKtx(ktxData);
+            this.skybox = this.engine.createSkyFromKtx1(ktxData);
             this.scene.setSkybox(this.skybox);
         });
     }
@@ -306,7 +309,7 @@ class FilamentViewer extends LitElement {
                 asyncInterval: 30
             };
 
-            const doneAddingResources = resourceLoader => {
+            const doneAddingResources = (resourceLoader, stbProvider, ktx2Provider) => {
                 this.srcBlobResources = {};
                 resourceLoader.asyncBeginLoad(this.asset);
                 const timer = setInterval(() => {
@@ -315,6 +318,8 @@ class FilamentViewer extends LitElement {
                     if (progress >= 1) {
                         clearInterval(timer);
                         resourceLoader.delete();
+                        stbProvider.delete();
+                        ktx2Provider.delete();
                         this.animator = this.asset.getAnimator();
                         this.animationStartTime = Date.now();
                     }
@@ -332,13 +337,20 @@ class FilamentViewer extends LitElement {
                     config.recomputeBoundingBoxes,
                     config.ignoreBindTransform);
 
+                const stbProvider = new Filament.gltfio$StbProvider(this.engine);
+                const ktx2Provider = new Filament.gltfio$Ktx2Provider(this.engine);
+
+                resourceLoader.addStbProvider("image/jpeg", stbProvider);
+                resourceLoader.addStbProvider("image/png", stbProvider);
+                resourceLoader.addKtx2Provider("image/ktx2", ktx2Provider);
+
                 let remaining = Object.keys(this.srcBlobResources).length;
                 for (const name in this.srcBlobResources) {
                     this.srcBlobResources[name].arrayBuffer().then(buffer => {
                         const desc = getBufferDescriptor(new Uint8Array(buffer));
                         resourceLoader.addResourceData(name, getBufferDescriptor(desc));
                         if (--remaining === 0) {
-                            doneAddingResources(resourceLoader);
+                            doneAddingResources(resourceLoader, stbProvider, ktx2Provider);
                         }
                     });
                 }
@@ -370,6 +382,7 @@ class FilamentViewer extends LitElement {
             this.asset.loadResources(() => {
                 this.animator = this.asset.getAnimator();
                 this.animationStartTime = Date.now();
+                this._applyMaterialVariant();
             }, null, basePath);
 
             this._updateOverlay();
@@ -422,6 +435,20 @@ class FilamentViewer extends LitElement {
         this.engine.execute();
 
         window.requestAnimationFrame(this._renderFrame.bind(this));
+    }
+
+    _applyMaterialVariant() {
+        if (!this.hasAttribute("materialVariant")) {
+            return;
+        }
+        const names = this.asset.getMaterialVariantNames();
+        const index = this.materialVariant;
+        if (index < 0 || index >= names.length) {
+            console.error(`Material variant ${index} does not exist in this asset.`);
+            return;
+        }
+        console.info(this.src, `Applying material variant: ${names[index]}`);
+        this.asset.applyMaterialVariant(index);
     }
 }
 

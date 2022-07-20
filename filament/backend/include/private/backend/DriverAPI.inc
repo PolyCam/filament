@@ -217,7 +217,14 @@ DECL_DRIVER_API_R_N(backend::TextureHandle, importTexture,
 DECL_DRIVER_API_R_N(backend::SamplerGroupHandle, createSamplerGroup,
         uint32_t, size)
 
-DECL_DRIVER_API_R_0(backend::RenderPrimitiveHandle, createRenderPrimitive)
+DECL_DRIVER_API_R_N(backend::RenderPrimitiveHandle, createRenderPrimitive,
+        backend::VertexBufferHandle, vbh,
+        backend::IndexBufferHandle, ibh,
+        backend::PrimitiveType, pt,
+        uint32_t, offset,
+        uint32_t, minIndex,
+        uint32_t, maxIndex,
+        uint32_t, count)
 
 DECL_DRIVER_API_R_N(backend::ProgramHandle, createProgram,
         backend::Program&&, program)
@@ -245,11 +252,6 @@ DECL_DRIVER_API_R_N(backend::SwapChainHandle, createSwapChainHeadless,
         uint32_t, width,
         uint32_t, height,
         uint64_t, flags)
-
-DECL_DRIVER_API_R_N(backend::StreamHandle, createStreamFromTextureId,
-        intptr_t, externalTextureId,
-        uint32_t, width,
-        uint32_t, height)
 
 DECL_DRIVER_API_R_0(backend::TimerQueryHandle, createTimerQuery)
 
@@ -323,6 +325,14 @@ DECL_DRIVER_API_N(updateBufferObject,
         backend::BufferDescriptor&&, data,
         uint32_t, byteOffset)
 
+DECL_DRIVER_API_N(updateBufferObjectUnsynchronized,
+        backend::BufferObjectHandle, ibh,
+        backend::BufferDescriptor&&, data,
+        uint32_t, byteOffset)
+
+DECL_DRIVER_API_N(resetBufferObject,
+        backend::BufferObjectHandle, ibh)
+
 DECL_DRIVER_API_N(updateSamplerGroup,
         backend::SamplerGroupHandle, ubh,
         backend::SamplerGroup&&, samplerGroup)
@@ -381,19 +391,6 @@ DECL_DRIVER_API_N(beginRenderPass,
 DECL_DRIVER_API_0(endRenderPass)
 
 DECL_DRIVER_API_0(nextSubpass)
-
-DECL_DRIVER_API_N(setRenderPrimitiveBuffer,
-        backend::RenderPrimitiveHandle, rph,
-        backend::VertexBufferHandle, vbh,
-        backend::IndexBufferHandle, ibh)
-
-DECL_DRIVER_API_N(setRenderPrimitiveRange,
-        backend::RenderPrimitiveHandle, rph,
-        backend::PrimitiveType, pt,
-        uint32_t, offset,
-        uint32_t, minIndex,
-        uint32_t, maxIndex,
-        uint32_t, count)
 
 DECL_DRIVER_API_N(beginTimerQuery,
         backend::TimerQueryHandle, query)
@@ -455,14 +452,6 @@ DECL_DRIVER_API_0(stopCapture)
 
 DECL_DRIVER_API_N(readPixels,
         backend::RenderTargetHandle, src,
-        uint32_t, x,
-        uint32_t, y,
-        uint32_t, width,
-        uint32_t, height,
-        backend::PixelBufferDescriptor&&, data)
-
-DECL_DRIVER_API_N(readStreamPixels,
-        backend::StreamHandle, sh,
         uint32_t, x,
         uint32_t, y,
         uint32_t, width,

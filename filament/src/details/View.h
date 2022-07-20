@@ -51,6 +51,7 @@
 #include <utils/Slice.h>
 
 #include <math/scalar.h>
+#include <math/mat4.h>
 
 namespace utils {
 class JobSystem;
@@ -72,40 +73,7 @@ class FMaterialInstance;
 class FRenderer;
 class FScene;
 
-// The value of the 'VISIBLE_MASK' after culling. Each bit represents visibility in a frustum
-// (either camera or light).
-//
-//                                    1
-// bits                               5 ... 7 6 5 4 3 2 1 0
-// +------------------------------------------------------+
-// VISIBLE_RENDERABLE                                     X
-// VISIBLE_DIR_SHADOW_RENDERABLE                        X
-// VISIBLE_SPOT_SHADOW_RENDERABLE_0                   X
-// VISIBLE_SPOT_SHADOW_RENDERABLE_1                 X
-// ...
-
-// A "shadow renderable" is a renderable rendered to the shadow map during a shadow pass:
-// PCF shadows: only shadow casters
-// VSM shadows: both shadow casters and shadow receivers
-
-static constexpr size_t VISIBLE_RENDERABLE_BIT = 0u;
-static constexpr size_t VISIBLE_DIR_SHADOW_RENDERABLE_BIT = 1u;
-static constexpr size_t VISIBLE_SPOT_SHADOW_RENDERABLE_N_BIT(size_t n) { return n + 2; }
-
 static constexpr Culler::result_type VISIBLE_RENDERABLE = 1u << VISIBLE_RENDERABLE_BIT;
-static constexpr Culler::result_type VISIBLE_DIR_SHADOW_RENDERABLE = 1u << VISIBLE_DIR_SHADOW_RENDERABLE_BIT;
-static constexpr Culler::result_type VISIBLE_SPOT_SHADOW_RENDERABLE_N(size_t n) {
-    return 1u << VISIBLE_SPOT_SHADOW_RENDERABLE_N_BIT(n);
-}
-
-// ORing of all the VISIBLE_SPOT_SHADOW_RENDERABLE bits
-static constexpr Culler::result_type VISIBLE_SPOT_SHADOW_RENDERABLE =
-        (0xFFu >> (sizeof(Culler::result_type) * 8u - CONFIG_MAX_SHADOW_CASTING_SPOTS)) << 2u;
-
-// Because we're using a uint16_t for the visibility mask, we're limited to 14 spot light shadows.
-// (2 of the bits are used for visible renderables + directional light shadow casters).
-static_assert(CONFIG_MAX_SHADOW_CASTING_SPOTS <= sizeof(Culler::result_type) * 8 - 2,
-        "CONFIG_MAX_SHADOW_CASTING_SPOTS cannot be higher than 14.");
 
 // ------------------------------------------------------------------------------------------------
 
@@ -118,8 +86,11 @@ public:
 
     void terminate(FEngine& engine);
 
+    CameraInfo computeCameraInfo(FEngine& engine) const noexcept;
+
     void prepare(FEngine& engine, backend::DriverApi& driver, ArenaScope& arena,
-            Viewport const& viewport, math::float4 const& userTime, bool needsAlphaChannel) noexcept;
+            filament::Viewport const& viewport, CameraInfo const& cameraInfo,
+            math::float4 const& userTime, bool needsAlphaChannel) noexcept;
 
     void setScene(FScene* scene) { mScene = scene; }
     FScene const* getScene() const noexcept { return mScene; }
@@ -127,8 +98,6 @@ public:
 
     void setCullingCamera(FCamera* camera) noexcept { mCullingCamera = camera; }
     void setViewingCamera(FCamera* camera) noexcept { mViewingCamera = camera; }
-
-    CameraInfo const& getCameraInfo() const noexcept { return mViewingCameraInfo; }
 
     void setViewport(Viewport const& viewport) noexcept;
     Viewport const& getViewport() const noexcept {
@@ -159,16 +128,17 @@ public:
 
     // returns the view's name. The pointer is owned by View.
     const char* getName() const noexcept {
-        return mName.c_str();
+        return mName.c_str_safe();
     }
 
     void prepareUpscaler(math::float2 scale) const noexcept;
-    void prepareCamera(const CameraInfo& camera) const noexcept;
-    void prepareViewport(const Viewport& viewport) const noexcept;
+    void prepareCamera(const CameraInfo& cameraInfo) const noexcept;
+    void prepareViewport(const Viewport& viewport, uint32_t xoffset, uint32_t yoffset) const noexcept;
     void prepareShadowing(FEngine& engine, backend::DriverApi& driver,
-            FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData) noexcept;
-    void prepareLighting(FEngine& engine, FEngine::DriverApi& driver,
-            ArenaScope& arena, Viewport const& viewport) noexcept;
+            FScene::RenderableSoa& renderableData, FScene::LightSoa& lightData,
+            CameraInfo const& cameraInfo) noexcept;
+    void prepareLighting(FEngine& engine, FEngine::DriverApi& driver, ArenaScope& arena,
+            filament::Viewport const& viewport, CameraInfo const &cameraInfo) noexcept;
 
     void prepareSSAO(backend::Handle<backend::HwTexture> ssao) const noexcept;
     void prepareSSR(backend::Handle<backend::HwTexture> ssr, float refractionLodOffset,
@@ -181,7 +151,7 @@ public:
     void prepareShadowMap() const noexcept;
 
     void cleanupRenderPasses() const noexcept;
-    void froxelize(FEngine& engine) const noexcept;
+    void froxelize(FEngine& engine, math::mat4f const& viewMatrix) const noexcept;
     void commitUniforms(backend::DriverApi& driver) const noexcept;
     void commitFroxels(backend::DriverApi& driverApi) const noexcept;
 
@@ -195,8 +165,8 @@ public:
     bool hasPCSS() const noexcept { return mShadowType == ShadowType::PCSS; }
     bool hasPicking() const noexcept { return mActivePickingQueriesList != nullptr; }
 
-    void renderShadowMaps(FrameGraph& fg, FEngine& engine, FEngine::DriverApi& driver,
-            RenderPass const& pass) noexcept;
+    FrameGraphId<FrameGraphTexture> renderShadowMaps(FrameGraph& fg, FEngine& engine,
+            FEngine::DriverApi& driver, RenderPass const& pass) noexcept;
 
     void updatePrimitivesLod(
             FEngine& engine, const CameraInfo& camera,
@@ -260,6 +230,12 @@ public:
 
     const ScreenSpaceReflectionsOptions& getScreenSpaceReflectionsOptions() const noexcept {
         return mScreenSpaceReflectionsOptions;
+    }
+
+    void setGuardBandOptions(GuardBandOptions options) noexcept;
+
+    GuardBandOptions const& getGuardBandOptions() const noexcept {
+        return mGuardBandOptions;
     }
 
     void setColorGrading(FColorGrading* colorGrading) noexcept {
@@ -407,8 +383,6 @@ public:
     static void cullRenderables(utils::JobSystem& js, FScene::RenderableSoa& renderableData,
             Frustum const& frustum, size_t bit) noexcept;
 
-    auto& getShadowUniforms() const { return mShadowUb; }
-
     PerViewUniforms const& getPerViewUniforms() const noexcept { return mPerViewUniforms; }
     PerViewUniforms& getPerViewUniforms() noexcept { return mPerViewUniforms; }
 
@@ -419,7 +393,7 @@ public:
 
     // Clean-up the oldest frame and save the current frame information.
     // This is typically called after all operations for this View's rendering are complete.
-    // (e.g.: after the FrameFraph execution).
+    // (e.g.: after the FrameGraph execution).
     void commitFrameHistory(FEngine& engine) noexcept;
 
     // create the picking query
@@ -461,11 +435,11 @@ private:
             Frustum const& frustum, FScene::RenderableSoa& renderableData) const noexcept;
 
     static void prepareVisibleLights(FLightManager const& lcm, ArenaScope& rootArena,
-            const CameraInfo& camera, Frustum const& frustum,
+            math::mat4f const& viewMatrix, Frustum const& frustum,
             FScene::LightSoa& lightData) noexcept;
 
     static inline void computeLightCameraDistances(float* distances,
-            const CameraInfo& camera, const math::float4* spheres, size_t count) noexcept;
+            math::mat4f const& viewMatrix, const math::float4* spheres, size_t count) noexcept;
 
     static void computeVisibilityMasks(
             uint8_t visibleLayers, uint8_t const* layers,
@@ -476,7 +450,7 @@ private:
     void bindPerViewUniformsAndSamplers(FEngine::DriverApi& driver) const noexcept {
         mPerViewUniforms.bind(driver);
         driver.bindUniformBuffer(BindingPoints::LIGHTS, mLightUbh);
-        driver.bindUniformBuffer(BindingPoints::SHADOW, mShadowUbh);
+        driver.bindUniformBuffer(BindingPoints::SHADOW, mShadowMapManager.getShadowUniformsHandle());
         driver.bindUniformBuffer(BindingPoints::FROXEL_RECORDS, mFroxelizer.getRecordBuffer());
     }
 
@@ -493,15 +467,13 @@ private:
 
     // these are accessed in the render loop, keep together
     backend::Handle<backend::HwBufferObject> mLightUbh;
-    backend::Handle<backend::HwBufferObject> mShadowUbh;
     backend::Handle<backend::HwBufferObject> mRenderableUbh;
 
     FScene* mScene = nullptr;
+    // The camera set by the user, used for culling and viewing
     FCamera* mCullingCamera = nullptr;
+    // The optional (debug) camera, used only for viewing
     FCamera* mViewingCamera = nullptr;
-
-    CameraInfo mViewingCameraInfo;
-    Frustum mCullingFrustum{};
 
     mutable Froxelizer mFroxelizer;
 
@@ -528,6 +500,7 @@ private:
     TemporalAntiAliasingOptions mTemporalAntiAliasingOptions;
     MultiSampleAntiAliasingOptions mMultiSampleAntiAliasingOptions;
     ScreenSpaceReflectionsOptions mScreenSpaceReflectionsOptions;
+    GuardBandOptions mGuardBandOptions;
     BlendMode mBlendMode = BlendMode::OPAQUE;
     const FColorGrading* mColorGrading = nullptr;
     const FColorGrading* mDefaultColorGrading = nullptr;
@@ -540,7 +513,6 @@ private:
     RenderQuality mRenderQuality;
 
     mutable PerViewUniforms mPerViewUniforms;
-    mutable TypedUniformBuffer<ShadowUib> mShadowUb;
 
     mutable FrameHistory mFrameHistory{};
 

@@ -161,7 +161,7 @@ public:
             mg_printf(conn, kSuccessHeader.c_str(), "application/json");
             mg_printf(conn, "{");
 
-            // If the backend has not been resolved to Vulkan, Metal, etc, then return an empty
+            // If the backend has not been resolved to Vulkan, Metal, etc., then return an empty
             // list. This can occur if the server is matinfo rather than an actual Filament session.
             if (mServer->mBackend == backend::Backend::DEFAULT) {
                 mg_printf(conn, "}");
@@ -300,11 +300,11 @@ public:
             }
 
             const auto& item = info[shaderIndex];
-            filaflat::ShaderBuilder builder;
-            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, builder);
+            filaflat::ShaderContent content;
+            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, content);
 
             mg_printf(conn, kSuccessHeader.c_str(), "application/txt");
-            mg_write(conn, builder.data(), builder.size() - 1);
+            mg_write(conn, content.data(), content.size() - 1);
             return true;
         }
 
@@ -314,7 +314,7 @@ public:
                 return error(__LINE__);
             }
 
-            filaflat::ShaderBuilder builder;
+            filaflat::ShaderContent content;
             FixedCapacityVector<ShaderInfo> info(getShaderCount(package, ChunkType::MaterialSpirv));
             if (!getVkShaderInfo(package, info.data())) {
                 return error(__LINE__);
@@ -326,15 +326,15 @@ public:
             }
 
             const auto& item = info[shaderIndex];
-            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, builder);
+            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, content);
 
             if (language == spirv) {
-                spirvToAsm(conn, (const uint32_t*) builder.data(), builder.size());
+                spirvToAsm(conn, (const uint32_t*) content.data(), content.size());
                 return true;
             }
 
             if (language == glsl) {
-                spirvToGlsl(conn, (const uint32_t*) builder.data(), builder.size());
+                spirvToGlsl(conn, (const uint32_t*) content.data(), content.size());
                 return true;
             }
 
@@ -347,7 +347,7 @@ public:
                 return error(__LINE__);
             }
 
-            filaflat::ShaderBuilder builder;
+            filaflat::ShaderContent content;
             FixedCapacityVector<ShaderInfo> info(getShaderCount(package, ChunkType::MaterialMetal));
             if (!getMetalShaderInfo(package, info.data())) {
                 return error(__LINE__);
@@ -359,11 +359,11 @@ public:
             }
 
             const auto& item = info[shaderIndex];
-            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, builder);
+            extractor.getShader(item.shaderModel, item.variant, item.pipelineStage, content);
 
             if (language == msl) {
                 mg_printf(conn, kSuccessHeader.c_str(), "application/txt");
-                mg_write(conn, builder.data(), builder.size() - 1);
+                mg_write(conn, content.data(), content.size() - 1);
                 return true;
             }
 
@@ -441,7 +441,8 @@ public:
         const static size_t kEditCmdLength = kEditCmd.size();
 
         if (0 == strncmp(data, kEditCmd.c_str(), kEditCmdLength)) {
-            std::istringstream str(data + kEditCmdLength);
+            std::string command(data + kEditCmdLength, size - kEditCmdLength);
+            std::istringstream str(command);
             uint32_t matid;
             int api;
             int shaderIndex;
@@ -546,8 +547,7 @@ DebugServer::addMaterial(const CString& name, const void* data, size_t size, voi
     }
 
     const uint32_t seed = 42;
-    auto words = (const uint32_t*) data;
-    MaterialKey key = utils::hash::murmur3(words, size / 4, seed);
+    const MaterialKey key = utils::hash::murmurSlow((const uint8_t*) data, size, seed);
 
     // Retain a copy of the package to permit queries after the client application has
     // freed up the original material package.

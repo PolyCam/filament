@@ -21,8 +21,7 @@
 
 using namespace bluevk;
 
-namespace filament {
-namespace backend {
+namespace filament::backend {
 
 VulkanBuffer::VulkanBuffer(VulkanContext& context, VulkanStagePool& stagePool,
         VkBufferUsageFlags usage, uint32_t numBytes) : mUsage(usage) {
@@ -38,7 +37,7 @@ VulkanBuffer::VulkanBuffer(VulkanContext& context, VulkanStagePool& stagePool,
         .usage = usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT
     };
 
-    VmaAllocationCreateInfo allocInfo { .pool = context.vmaPoolGPU };
+    VmaAllocationCreateInfo allocInfo { .usage = VMA_MEMORY_USAGE_GPU_ONLY };
     vmaCreateBuffer(context.allocator, &bufferInfo, &allocInfo, &mGpuBuffer, &mGpuMemory, nullptr);
 }
 
@@ -114,5 +113,4 @@ void VulkanBuffer::loadFromCpu(VulkanContext& context, VulkanStagePool& stagePoo
     }
 }
 
-} // namespace filament
-} // namespace backend
+} // namespace filament::backend

@@ -14,32 +14,35 @@
  * limitations under the License.
  */
 
-#ifndef TNT_FILAMENT_DRIVER_NOOPDRIVER_H
-#define TNT_FILAMENT_DRIVER_NOOPDRIVER_H
+#ifndef TNT_FILAMENT_BACKEND_NOOPDRIVER_H
+#define TNT_FILAMENT_BACKEND_NOOPDRIVER_H
 
 #include "private/backend/Driver.h"
 #include "DriverBase.h"
 
 #include <utils/compiler.h>
 
-namespace filament {
+namespace filament::backend {
 
-class NoopDriver final : public backend::DriverBase {
+class NoopDriver final : public DriverBase {
     NoopDriver() noexcept;
     ~NoopDriver() noexcept override;
+    Dispatcher getDispatcher() const noexcept final;
 
 public:
-    static backend::Driver* create();
+    static Driver* create();
 
 private:
-    backend::ShaderModel getShaderModel() const noexcept final;
+    ShaderModel getShaderModel() const noexcept final;
+
+    uint64_t nextFakeHandle = 1;
 
     /*
      * Driver interface
      */
 
     template<typename T>
-    friend class backend::ConcreteDispatcher;
+    friend class ConcreteDispatcher;
 
 #define DECL_DRIVER_API(methodName, paramsDecl, params) \
     UTILS_ALWAYS_INLINE inline void methodName(paramsDecl);
@@ -49,7 +52,7 @@ private:
 
 #define DECL_DRIVER_API_RETURN(RetType, methodName, paramsDecl, params) \
     RetType methodName##S() noexcept override { \
-        return RetType((RetType::HandleId)0xDEAD0000); } \
+        return RetType((RetType::HandleId)nextFakeHandle++); } \
     UTILS_ALWAYS_INLINE inline void methodName##R(RetType, paramsDecl) { }
 
 #include "private/backend/DriverAPI.inc"
@@ -57,4 +60,4 @@ private:
 
 } // namespace filament
 
-#endif // TNT_FILAMENT_DRIVER_NOOPDRIVER_H
+#endif // TNT_FILAMENT_BACKEND_NOOPDRIVER_H

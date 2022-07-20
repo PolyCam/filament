@@ -32,13 +32,19 @@ material {
 
 vertex {
     void postProcessVertex(inout PostProcessVertexInputs postProcess) {
-        postProcess.vertex.xy = postProcess.normalizedUV * vec2(materialParams.size);
+        postProcess.vertex.xy = uvToRenderTargetUV(postProcess.normalizedUV) * vec2(materialParams.size);
     }
 }
 
 fragment {
 
 void dummy() {}
+
+#if defined(TARGET_MOBILE)
+#   define MIN_ROUGHNESS            0.007921
+#else
+#   define MIN_ROUGHNESS            0.002025
+#endif
 
 // we default to highp in this shader
 precision highp float;

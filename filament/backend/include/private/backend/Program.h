@@ -25,7 +25,6 @@
 #include <utils/ostream.h>
 
 #include <backend/DriverEnums.h>
-#include <backend/ShaderStageFlags.h>
 
 #include <array>
 
@@ -68,6 +67,8 @@ public:
             utils::Invocable<utils::io::ostream&(utils::io::ostream& out)>&& logger);
 
     // sets one of the program's shader (e.g. vertex, fragment)
+    // string-based shaders are null terminated, consequently the size parameter must include the
+    // null terminating character.
     Program& shader(Shader shader, void const* data, size_t size) noexcept;
 
     // sets the 'bindingPoint' uniform block's name for this program.
@@ -85,22 +86,28 @@ public:
     Program& setSamplerGroup(size_t bindingPoint, ShaderStageFlags stageFlags,
             Sampler const* samplers, size_t count) noexcept;
 
+    // string-based shaders are null terminated, consequently the size parameter must include the
+    // null terminating character.
     Program& withVertexShader(void const* data, size_t size) {
         return shader(Shader::VERTEX, data, size);
     }
 
+    // string-based shaders are null terminated, consequently the size parameter must include the
+    // null terminating character.
     Program& withFragmentShader(void const* data, size_t size) {
         return shader(Shader::FRAGMENT, data, size);
     }
 
     using ShaderBlob = utils::FixedCapacityVector<uint8_t>;
-    std::array<ShaderBlob, SHADER_TYPE_COUNT> const& getShadersSource() const noexcept {
-        return mShadersSource;
-    }
+    using ShaderSource = std::array<ShaderBlob, SHADER_TYPE_COUNT>;
+    ShaderSource const& getShadersSource() const noexcept { return mShadersSource; }
+    ShaderSource& getShadersSource() noexcept { return mShadersSource; }
 
     UniformBlockInfo const& getUniformBlockInfo() const noexcept { return mUniformBlocks; }
+    UniformBlockInfo& getUniformBlockInfo() noexcept { return mUniformBlocks; }
 
     SamplerGroupInfo const& getSamplerGroupInfo() const { return mSamplerGroups; }
+    SamplerGroupInfo& getSamplerGroupInfo() { return mSamplerGroups; }
 
     const utils::CString& getName() const noexcept { return mName; }
 
@@ -111,7 +118,7 @@ private:
 
     UniformBlockInfo mUniformBlocks = {};
     SamplerGroupInfo mSamplerGroups = {};
-    std::array<ShaderBlob, SHADER_TYPE_COUNT> mShadersSource;
+    ShaderSource mShadersSource;
     bool mHasSamplers = false;
     utils::CString mName;
     utils::Invocable<utils::io::ostream&(utils::io::ostream& out)> mLogger;

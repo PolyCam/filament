@@ -17,18 +17,22 @@
 #ifndef TNT_UTILS_OSTREAM_H
 #define TNT_UTILS_OSTREAM_H
 
-#include <mutex>
-#include <string>
-#include <utility>
-
 #include <utils/bitset.h>
-#include <utils/compiler.h> // ssize_t is a POSIX type.
+#include <utils/compiler.h>
+#include <utils/PrivateImplementation.h>
+
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace utils::io {
 
-class UTILS_PUBLIC  ostream {
-public:
+struct ostream_;
 
+class UTILS_PUBLIC  ostream : protected utils::PrivateImplementation<ostream_> {
+    friend struct ostream_;
+
+public:
     virtual ~ostream();
 
     ostream& operator<<(short value) noexcept;
@@ -57,12 +61,17 @@ public:
     ostream& operator<<(const char* string) noexcept;
     ostream& operator<<(const unsigned char* string) noexcept;
 
+    ostream& operator<<(std::string const& s) noexcept;
+    ostream& operator<<(std::string_view const& s) noexcept;
+
     ostream& operator<<(ostream& (* f)(ostream&)) noexcept { return f(*this); }
 
     ostream& dec() noexcept;
     ostream& hex() noexcept;
 
 protected:
+    ostream& print(const char* format, ...) noexcept;
+
     class Buffer {
     public:
         Buffer() noexcept;
@@ -86,11 +95,8 @@ protected:
         size_t capacity = 0;        // total capacity of the buffer
     };
 
-    std::mutex mLock;
-    Buffer mData;
-    Buffer& getBuffer() noexcept { return mData; }
-
-    ostream& print(const char* format, ...) noexcept;
+    Buffer& getBuffer() noexcept;
+    Buffer const& getBuffer() const noexcept;
 
 private:
     virtual ostream& flush() noexcept = 0;
@@ -105,13 +111,8 @@ private:
         LONG_DOUBLE
     };
 
-    inline const char* getFormat(type t) const noexcept;
-
-    bool mShowHex = false;
+    const char* getFormat(type t) const noexcept;
 };
-
-// handles std::string
-inline ostream& operator << (ostream& o, std::string const& s) noexcept { return o << s.c_str(); }
 
 // handles utils::bitset
 inline ostream& operator << (ostream& o, utils::bitset32 const& s) noexcept {
@@ -131,7 +132,7 @@ inline ostream& operator<<(ostream& stream, const VECTOR<T>& v) {
 
 inline ostream& hex(ostream& s) noexcept { return s.hex(); }
 inline ostream& dec(ostream& s) noexcept { return s.dec(); }
-inline ostream& endl(ostream& s) noexcept { s << "\n"; return s.flush(); }
+inline ostream& endl(ostream& s) noexcept { s << '\n'; return s.flush(); }
 inline ostream& flush(ostream& s) noexcept { return s.flush(); }
 
 } // namespace utils::io

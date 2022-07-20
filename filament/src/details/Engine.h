@@ -20,6 +20,7 @@
 #include "upcast.h"
 
 #include "Allocators.h"
+#include "DFG.h"
 #include "PostProcessManager.h"
 #include "ResourceList.h"
 
@@ -67,8 +68,6 @@ using MaterialKey = uint32_t;
 } // namespace filament
 #endif
 
-#include <filaflat/ShaderBuilder.h>
-
 #include <utils/compiler.h>
 #include <utils/Allocator.h>
 #include <utils/JobSystem.h>
@@ -76,6 +75,7 @@ using MaterialKey = uint32_t;
 
 #include <chrono>
 #include <memory>
+#include <new>
 #include <random>
 #include <unordered_map>
 
@@ -96,7 +96,6 @@ class FScene;
 class FSwapChain;
 class FView;
 
-class DFG;
 class ResourceAllocator;
 
 /*
@@ -106,8 +105,8 @@ class ResourceAllocator;
 class FEngine : public Engine {
 public:
 
-    inline void* operator new(std::size_t count) noexcept {
-        return utils::aligned_alloc(count * sizeof(FEngine), alignof(FEngine));
+    inline void* operator new(std::size_t size) noexcept {
+        return utils::aligned_alloc(size, alignof(FEngine));
     }
 
     inline void operator delete(void* p) noexcept {
@@ -147,8 +146,12 @@ public:
     ~FEngine() noexcept;
 
     backend::Driver& getDriver() const noexcept { return *mDriver; }
-    DriverApi& getDriverApi() noexcept { return mCommandStream; }
-    DFG* getDFG() const noexcept { return mDFG.get(); }
+
+    DriverApi& getDriverApi() noexcept {
+        return *std::launder(reinterpret_cast<DriverApi*>(&mDriverApiStorage));
+    }
+
+    DFG const& getDFG() const noexcept { return mDFG; }
 
     // the per-frame Area is used by all Renderer, so they must run in sequence and
     // have freed all allocated memory when done. If this needs to change in the future,
@@ -319,12 +322,14 @@ public:
     void prepare();
     void gc();
 
-    filaflat::ShaderBuilder& getVertexShaderBuilder() const noexcept {
-        return mVertexShaderBuilder;
+    using ShaderContent = utils::FixedCapacityVector<uint8_t>;
+
+    ShaderContent& getVertexShaderContent() const noexcept {
+        return mVertexShaderContent;
     }
 
-    filaflat::ShaderBuilder& getFragmentShaderBuilder() const noexcept {
-        return mFragmentShaderBuilder;
+    ShaderContent& getFragmentShaderContent() const noexcept {
+        return mFragmentShaderContent;
     }
 
     FDebugRegistry& getDebugRegistry() noexcept {
@@ -345,9 +350,18 @@ public:
         getDriver().purge();
     }
 
+    void setAutomaticInstancingEnabled(bool enable) noexcept {
+        mAutomaticInstancingEnabled = enable;
+    }
+
+    bool isAutomaticInstancingEnabled() const noexcept {
+        return mAutomaticInstancingEnabled;
+    }
+
     backend::Handle<backend::HwTexture> getOneTexture() const { return mDummyOneTexture; }
     backend::Handle<backend::HwTexture> getZeroTexture() const { return mDummyZeroTexture; }
     backend::Handle<backend::HwTexture> getOneTextureArray() const { return mDummyOneTextureArray; }
+    backend::Handle<backend::HwTexture> getZeroTextureArray() const { return mDummyZeroTextureArray; }
     backend::Handle<backend::HwTexture> getOneIntegerTextureArray() const { return mDummyOneIntegerTextureArray; }
 
 private:
@@ -376,8 +390,8 @@ private:
     Backend mBackend;
     Platform* mPlatform = nullptr;
     bool mOwnPlatform = false;
+    bool mAutomaticInstancingEnabled = false;
     void* mSharedGLContext = nullptr;
-    bool mTerminated = false;
     backend::Handle<backend::HwRenderPrimitive> mFullScreenTriangleRph;
     FVertexBuffer* mFullScreenTriangleVb = nullptr;
     FIndexBuffer* mFullScreenTriangleIb = nullptr;
@@ -418,11 +432,13 @@ private:
     // FMaterialInstance are handled directly by FMaterial
     std::unordered_map<const FMaterial*, ResourceList<FMaterialInstance>> mMaterialInstances;
 
-    std::unique_ptr<DFG> mDFG;
+    DFG mDFG;
 
     std::thread mDriverThread;
     backend::CommandBufferQueue mCommandBufferQueue;
-    DriverApi mCommandStream;
+    std::aligned_storage<sizeof(DriverApi), alignof(DriverApi)>::type mDriverApiStorage;
+    static_assert( sizeof(mDriverApiStorage) >= sizeof(DriverApi) );
+
     uint32_t mFlushCounter = 0;
 
     LinearAllocatorArena mPerRenderPassAllocator;
@@ -446,12 +462,13 @@ private:
 
     mutable utils::CountDownLatch mDriverBarrier;
 
-    mutable filaflat::ShaderBuilder mVertexShaderBuilder;
-    mutable filaflat::ShaderBuilder mFragmentShaderBuilder;
+    mutable ShaderContent mVertexShaderContent;
+    mutable ShaderContent mFragmentShaderContent;
     FDebugRegistry mDebugRegistry;
 
     backend::Handle<backend::HwTexture> mDummyOneTexture;
     backend::Handle<backend::HwTexture> mDummyOneTextureArray;
+    backend::Handle<backend::HwTexture> mDummyZeroTextureArray;
     backend::Handle<backend::HwTexture> mDummyOneIntegerTextureArray;
     backend::Handle<backend::HwTexture> mDummyZeroTexture;
 
@@ -469,13 +486,6 @@ public:
             float dzn = -1.0f;
             float dzf =  1.0f;
         } shadowmap;
-        struct {
-            bool enabled = true;
-            int sampleCount = 7;
-            int spiralTurns = 1;
-            int kernelSize = 23;
-            float stddev = 8.0f;
-        } ssao;
         struct {
             bool camera_at_origin = true;
             struct {

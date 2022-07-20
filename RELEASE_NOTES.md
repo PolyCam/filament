@@ -3,7 +3,134 @@
 This file contains one line summaries of commits that are worthy of mentioning in release notes.
 A new header is inserted each time a *tag* is created.
 
-## v1.20.6 (currently main branch)
+## main branch
+
+## v1.25.2
+
+- engine: `Camera::getNear()` and `Camera::getCullingFar()` now return `doubles`
+- Metal: implement scissor support.
+- engine: `Renderer::getUserTime()` now returns seconds as documented (#5722) [⚠️ **API Fix**]
+
+## v1.25.1
+
+- engine: add support for automatic instancing. Must be enabled with `Engine::setAutomaticInstancingEnabled(bool)`
+
+## v1.25.0
+
+- Vulkan: smol-v blobs are now 8-byte aligned within the filamat archive. [⚠️ **Recompile Materials**]
+- backend: added support for EGL on linux (headless)
+- uberz tool: add --append and --template arguments.
+- matc tool: add --template argument.
+
+## v1.24.0
+
+- ImGuiHelper: add support for Y flip.
+- Metal: ignore `MTLTexture` formatting when importing external textures.
+- materials: add a new `instanced` material parameter that is now mandatory in order to call `getInstanceIndex()`
+- gltfio: UbershaderProvider now takes the ubershader archive in its constructor [⚠️ **API Change**]
+- gltfio: Fix morphing with sparse accessors.
+- gltfio: Fix models that use signed integers for morphing.
+- engine: Documentation improvements regarding SkinningBuffer and fix an off-by-one assert when setting a SkinningBuffer.
+- picking is now exposed to JavaScript
+- gltf_viewer: Exercise picking functionality.
+- OpenGL: add WebGL support for ReadPixels
+- Vulkan: add assert and error message for OOM (debug builds)
+- Vulkan: fix crash with picking and 2-component ReadPixels.
+- backend: workaround broken GLES timer query on some Mali-Gxx old drivers
+- backend: revert c049a1 & reenable b2cdf9 ("don't issue a flush systematically after framegraph's execute")
+- gltfio: namespace now lives under Filament [⚠️ **API Change**]
+- gltfio: UbershaderLoader renamed to UbershaderProvider [⚠️ **API Change**]
+- gltfio: MaterialGenerator renamed to JitShaderProvider [⚠️ **API Change**]
+
+## v1.23.2
+
+- gltfio: Fix morphing for un-packed accessors.
+- gltfio: Ubershaders are now packaged into flexible archives.
+- gltfio: Remove poorly maintained lite flavor.
+- engine: Disable user scissor while rendering the Shadow Maps.
+- engine: Merge identical backend `RenderPrimitives` together.
+- engine: Improve `ResourceAllocator` performance a bit by reserving 128 cache entries.
+- utils: Remove `std::hash<T>` definitions for `libutils` types. Use `T::Hasher` explicitly instead. [⚠️ **API Change**]
+- backend: Fix WGL context attributes.
+- Metal: Fix potential invalid shaders when using gltfio in Ubershader mode. [⚠️ **Recompile Materials to get the fix**]
+
+## v1.23.1
+
+- gltfio: support skinning with bones that do not belong to any scene.
+- gltfio: add `attachSkin` / `detachSkin` method to FilamentAsset.
+- gltfio: ubershader mode: set sheen to `OPAQUE`.
+- Metal: fix issues seen with dynamic resolution on M1 Macs.
+- engine: add a "global" mode for render primitive's `blendOrder`.
+- engine: remove `RenderManager::setGeometryAt(index, count)`. [⚠️ **API Change**]
+- engine: fix overallocation by about 17MB.
+- WebGL: Add JS bindings for Texture class methods.
+
+## v1.23.0
+
+- engine: Changed UBOs layout [⚠️ **Material breakage**].
+- engine: Normals on morphed models have been fixed (core Filament change).
+- Java: View has several minor changes due to generated code, such as field ordering.
+- gltfio: Fix crash when reloading glTF assets.
+- gltfio: introduce cross-fade animation API [**NEW API**].
+
+## v1.22.2
+
+- Java: Minor API change: rename `ssctStartTraceDistance` to `ssctShadowDistance`. [⚠️ **API Change**]
+- Java: Minor API change: rename `blendingMode` to `blendMode`. [⚠️ **API Change**]
+- engine: Fix some memory leaks.
+
+## v1.22.1
+
+- Metal: Shaders now use `half` floating-point arithmetic when possible for improved performance. [⚠️ **Recompile Materials**]
+- engine: add support for presentation time in `Renderer`
+- engine: added guard bands support for screen-space effects
+- gltfio: Add multi-scene support.
+- gltfio: Various glTF-related cleanup and enhancements.
+- gltfio: Add support for KHR_texture_basisu.
+
+## v1.22.0
+
+- engine: Changed UBOs layout [⚠️ **Material breakage**].
+- engine: Improve effects relying on mipmapping
+- engine: Fix assert seen with VSM shadows.
+- WebGL: Fix `isTextureFormatSupported` for ETC2 formats.
+
+## v1.21.3
+
+- Java: Renamed the `KTXLoader` Kotlin class to `KTX1Loader`.  [⚠️ **API Change**].
+- libs: Added `Ktx2Reader` and `BasisEncoder` to support Basis-encoded KTX2 files.
+- engine: Remove deprecated `Stream` APIs, see `Texture::import()` for an alternative [⚠️ **API Change**].
+- tools: Removed KTX1 compression support from mipgen.  [⚠️ **API Change**].
+- tools: Added support for KTX2 to mipgen.
+- gltfio: Added `resetBoneMatrices()` method.
+- gltfio: Introduced `TextureProvider` interface.  [⚠️ **API Change**].
+- gltfio: Fix progress indicator when error occurs.
+- samples: Desktop and Web Suzanne samples now use KTX2 instead of KTX1.
+- samples: Fix regression with sample-gltf-viewer and zip files.
+
+## v1.21.2
+
+- Java: Add Java binding to get skins in `FilamentAsset`.
+- libs: Add libs/ktxreader [⚠️ **API Change**].
+- mipgen: fixups / clarification regarding sRGB.
+- WebGL: fix intermittent 'detached ArrayBuffer' errors.
+
+## v1.21.1
+
+- engine: Allow both screen-space refraction and screen-space reflections on the same object [⚠️ **Material breakage**].
+- engine: Optimizations for screen-space reflections.
+- engine: Remove `Viewport::scale()` [⚠️ **API Change**].
+- engine: Fix 12x overallocation of memory in `MorphTargetBuffer`.
+- Metal: Fix validation error when reading from default `SwapChain`.
+
+## v1.21.0
+
+- engine: OpenGL performance improvements with some drivers.
+- engine: Fix incorrect shadows with some custom projection matrices.
+- engine: Fix low frame rates seen with a lot of morph targets.
+- gltfio: Add support for KHR_materials_variants.
+- gltfio: Add support for KHR_materials_emissive_strength.
+- gltfio: Java now exposes morph target names as an array for consistency [⚠️ **API Change**].
 
 ## v1.20.5
 
@@ -429,7 +556,7 @@ devices.
 - engine: Fix RenderTarget NPE when depth is not present.
 - engine: Improvements to Camera APIs. Move focus distance from DofOptions to Camera.
 - engine: VSM shadows now support `shadowMultiplier`.
-- java: Expose severla MaterialInstance APIs (setColorWrite, setDepthWrite, setDepthCulling) that
+- java: Expose several MaterialInstance APIs (setColorWrite, setDepthWrite, setDepthCulling) that
   should have been public.
 - java: fix bug with Texture::setImage buffer size calculation.
 

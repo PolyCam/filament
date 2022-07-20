@@ -1,3 +1,18 @@
+//------------------------------------------------------------------------------
+// Instance access
+//------------------------------------------------------------------------------
+
+#if defined(MATERIAL_HAS_INSTANCES)
+/** @public-api */
+int getInstanceIndex() {
+    return instance_index;
+}
+#endif
+
+//------------------------------------------------------------------------------
+// Attributes access
+//------------------------------------------------------------------------------
+
 #if defined(HAS_ATTRIBUTE_COLOR)
 /** @public-api */
 vec4 getColor() {
@@ -59,26 +74,6 @@ vec3 getWorldReflectedVector() {
 /** @public-api */
 float getNdotV() {
     return shading_NoV;
-}
-
-/**
- * Transforms a texture UV to make it suitable for a render target attachment.
- *
- * In Vulkan and Metal, texture coords are Y-down but in OpenGL they are Y-up. This wrapper function
- * accounts for these differences. When sampling from non-render targets (i.e. uploaded textures)
- * these differences do not matter because OpenGL has a second piece of backwardness, which is that
- * the first row of texels in glTexImage2D is interpreted as the bottom row.
- *
- * To protect users from these differences, we recommend that materials in the SURFACE domain
- * leverage this wrapper function when sampling from offscreen render targets.
- *
- * @public-api
- */
-highp vec2 uvToRenderTargetUV(highp vec2 uv) {
-#if defined(TARGET_METAL_ENVIRONMENT) || defined(TARGET_VULKAN_ENVIRONMENT)
-    uv.y = 1.0 - uv.y;
-#endif
-    return uv;
 }
 
 /**
@@ -144,3 +139,13 @@ highp vec4 getCascadeLightSpacePosition(uint cascade) {
 }
 
 #endif
+
+PerRenderableData getObjectUniforms() {
+#if defined(MATERIAL_HAS_INSTANCES)
+    // the material manages instancing, all instances share the same uniform block.
+    return objectUniforms.data[0];
+#else
+     // automatic instancing was used, each instance has its own uniform block.
+    return objectUniforms.data[instance_index];
+#endif
+}
