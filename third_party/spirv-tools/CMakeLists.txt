@@ -39,7 +39,6 @@ include(GNUInstallDirs)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 11)
 
-option(ENABLE_RTTI "Enables RTTI" OFF)
 option(SPIRV_ALLOW_TIMERS "Allow timers via clock_gettime on supported platforms" ON)
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux")
