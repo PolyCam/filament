@@ -15,7 +15,6 @@
 cmake_minimum_required(VERSION 3.19)
 project(SPIRV-Cross)
 
-# Use assertions instead of exceptions so we can succesfully compile with -fno-exceptions.
 option(SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS "Instead of throwing exceptions assert" ON)
 
 if(${CMAKE_GENERATOR} MATCHES "Makefile")
@@ -41,7 +40,7 @@ if (NOT "${MSVC}")
   set(spirv-compiler-defines ${spirv-compiler-defines} __STDC_LIMIT_MACROS)
 
   if(SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS)
-    set(spirv-compiler-options ${spirv-compiler-options} -fno-exceptions)
+    set(spirv-compiler-options ${spirv-compiler-options})
   endif()
 endif()
 

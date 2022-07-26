@@ -94,7 +94,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/gitversion.in.h ${CMAKE_CURRENT
 if (SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS)
 	set(spirv-compiler-defines ${spirv-compiler-defines} SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS)
 	if (NOT MSVC)
-		set(spirv-compiler-options ${spirv-compiler-options} -fno-exceptions)
+		set(spirv-compiler-options ${spirv-compiler-options})
 	endif()
 endif()
 
@@ -118,7 +118,7 @@ if (CMAKE_COMPILER_IS_GNUCXX OR ((${CMAKE_CXX_COMPILER_ID} MATCHES "Clang") AND 
 	endif()
 
 	if (SPIRV_CROSS_EXCEPTIONS_TO_ASSERTIONS)
-		set(spirv-compiler-options ${spirv-compiler-options} -fno-exceptions)
+		set(spirv-compiler-options ${spirv-compiler-options})
 	endif()
 
 	if (SPIRV_CROSS_SANITIZE_ADDRESS)

@@ -103,10 +103,6 @@ using namespace filament::viewer;
 
 namespace em = emscripten;
 
-#if __has_feature(cxx_rtti)
-#error Filament JS bindings require RTTI to be disabled.
-#endif
-
 // Many methods require a thin layer of C++ glue which is elegantly expressed with a lambda.
 // However, passing a bare lambda into embind's daisy chain requires a cast to a function pointer.
 #define EMBIND_LAMBDA(retval, arglist, impl) (retval (*) arglist) [] arglist impl
