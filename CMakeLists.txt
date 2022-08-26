@@ -694,11 +694,6 @@ endif()
 
 set(FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
 
-if (WEBGL)
-    add_subdirectory(web/filament-js)
-    add_subdirectory(web/samples)
-endif()
-
 if (IS_HOST_PLATFORM)
     if (FILAMENT_SUPPORTS_OPENGL)
         add_subdirectory(${LIBRARIES}/bluegl)
