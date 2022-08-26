@@ -29,7 +29,7 @@
 #include "fg/details/Resource.h"
 #include "fg/details/Utilities.h"
 
-#include "private/backend/DriverApiForward.h"
+#include "backend/DriverApiForward.h"
 
 #include <backend/DriverEnums.h>
 #include <backend/Handle.h>
@@ -460,7 +460,7 @@ private:
     FrameGraphHandle forwardResourceInternal(FrameGraphHandle resourceHandle,
             FrameGraphHandle replaceResourceHandle);
 
-    bool assertValid(FrameGraphHandle handle) const;
+    void assertValid(FrameGraphHandle handle) const;
 
     template<typename RESOURCE>
     FrameGraphId<RESOURCE> create(char const* name,

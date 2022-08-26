@@ -118,25 +118,16 @@ public:
     using Epoch = clock::time_point;
     using duration = clock::duration;
 
-    // TODO: these should come from a configuration object
-    static constexpr float  CONFIG_Z_LIGHT_NEAR            = 5;
-    static constexpr float  CONFIG_Z_LIGHT_FAR             = 100;
-    static constexpr size_t CONFIG_FROXEL_SLICE_COUNT      = 16;
-    static constexpr bool   CONFIG_IBL_USE_IRRADIANCE_MAP  = false;
-
-    static constexpr size_t CONFIG_PER_RENDER_PASS_ARENA_SIZE   = filament::CONFIG_PER_RENDER_PASS_ARENA_SIZE;
-    static constexpr size_t CONFIG_PER_FRAME_COMMANDS_SIZE      = filament::CONFIG_PER_FRAME_COMMANDS_SIZE;
-    static constexpr size_t CONFIG_MIN_COMMAND_BUFFERS_SIZE     = filament::CONFIG_MIN_COMMAND_BUFFERS_SIZE;
-    static constexpr size_t CONFIG_COMMAND_BUFFERS_SIZE         = filament::CONFIG_COMMAND_BUFFERS_SIZE;
-
 public:
     static FEngine* create(Backend backend = Backend::DEFAULT,
-            Platform* platform = nullptr, void* sharedGLContext = nullptr);
+            Platform* platform = nullptr, void* sharedGLContext = nullptr,
+            const Config* pConfig = nullptr);
 
 #if UTILS_HAS_THREADING
     static void createAsync(CreateCallback callback, void* user,
             Backend backend = Backend::DEFAULT,
-            Platform* platform = nullptr, void* sharedGLContext = nullptr);
+            Platform* platform = nullptr, void* sharedGLContext = nullptr,
+            const Config* config = nullptr);
 
     static FEngine* getEngine(void* token);
 #endif
@@ -145,7 +136,7 @@ public:
 
     ~FEngine() noexcept;
 
-    backend::Driver& getDriver() const noexcept { return *mDriver; }
+    backend::ShaderModel getShaderModel() const noexcept { return getDriver().getShaderModel(); }
 
     DriverApi& getDriverApi() noexcept {
         return *std::launder(reinterpret_cast<DriverApi*>(&mDriverApiStorage));
@@ -182,6 +173,14 @@ public:
 
     math::mat4f getUvFromClipMatrix() const noexcept {
         return mUvFromClipMatrix;
+    }
+
+    FeatureLevel getSupportedFeatureLevel() const noexcept;
+
+    FeatureLevel setActiveFeatureLevel(FeatureLevel featureLevel);
+
+    FeatureLevel getActiveFeatureLevel() const noexcept {
+        return mActiveFeatureLevel;
     }
 
     PostProcessManager const& getPostProcessManager() const noexcept {
@@ -362,15 +361,30 @@ public:
     backend::Handle<backend::HwTexture> getZeroTexture() const { return mDummyZeroTexture; }
     backend::Handle<backend::HwTexture> getOneTextureArray() const { return mDummyOneTextureArray; }
     backend::Handle<backend::HwTexture> getZeroTextureArray() const { return mDummyZeroTextureArray; }
-    backend::Handle<backend::HwTexture> getOneIntegerTextureArray() const { return mDummyOneIntegerTextureArray; }
+
+    static constexpr const size_t MiB = 1024u * 1024u;
+    size_t getMinCommandBufferSize() const noexcept { return mConfig.minCommandBufferSizeMB * MiB; }
+    size_t getCommandBufferSize() const noexcept { return mConfig.commandBufferSizeMB * MiB; }
+    size_t getPerFrameCommandsSize() const noexcept { return mConfig.perFrameCommandsSizeMB * MiB; }
+    size_t getPerRenderPassArenaSize() const noexcept { return mConfig.perRenderPassArenaSizeMB * MiB; }
+    size_t getRequestedDriverHandleArenaSize() const noexcept { return mConfig.driverHandleArenaSizeMB * MiB; }
+    Config const& getConfig() const noexcept { return mConfig; }
+
+    bool hasFeatureLevel(backend::FeatureLevel featureLevel) const noexcept {
+        return featureLevel <= mActiveFeatureLevel;
+    }
 
 private:
-    FEngine(Backend backend, Platform* platform, void* sharedGLContext);
+    static Config validateConfig(const Config* pConfig) noexcept;
+
+    FEngine(Backend backend, Platform* platform, const Config& config, void* sharedGLContext);
     void init();
     void shutdown();
 
     int loop();
     void flushCommandBuffer(backend::CommandBufferQueue& commandBufferQueue);
+
+    backend::Driver& getDriver() const noexcept { return *mDriver; }
 
     template<typename T>
     bool terminateAndDestroy(const T* p, ResourceList<T>& list);
@@ -388,6 +402,7 @@ private:
     backend::Handle<backend::HwRenderTarget> mDefaultRenderTarget;
 
     Backend mBackend;
+    FeatureLevel mActiveFeatureLevel = FeatureLevel::FEATURE_LEVEL_1;
     Platform* mPlatform = nullptr;
     bool mOwnPlatform = false;
     bool mAutomaticInstancingEnabled = false;
@@ -469,10 +484,12 @@ private:
     backend::Handle<backend::HwTexture> mDummyOneTexture;
     backend::Handle<backend::HwTexture> mDummyOneTextureArray;
     backend::Handle<backend::HwTexture> mDummyZeroTextureArray;
-    backend::Handle<backend::HwTexture> mDummyOneIntegerTextureArray;
     backend::Handle<backend::HwTexture> mDummyZeroTexture;
 
     std::thread::id mMainThreadId{};
+
+    // Creation parameters
+    Config mConfig;
 
 public:
     // these are the debug properties used by FDebug. They're accessed directly by modules who need them.

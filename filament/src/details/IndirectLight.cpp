@@ -36,6 +36,9 @@ using namespace filament::math;
 
 namespace filament {
 
+// TODO: This should be a quality setting on View or LightManager
+static constexpr bool CONFIG_IBL_USE_IRRADIANCE_MAP = false;
+
 // ------------------------------------------------------------------------------------------------
 
 struct IndirectLight::BuilderDetails {
@@ -147,23 +150,19 @@ IndirectLight::Builder& IndirectLight::Builder::rotation(mat3f const& rotation) 
 
 IndirectLight* IndirectLight::Builder::build(Engine& engine) {
     if (mImpl->mReflectionsMap) {
-        if (!ASSERT_POSTCONDITION_NON_FATAL(
+        ASSERT_PRECONDITION(
                 mImpl->mReflectionsMap->getTarget() == Texture::Sampler::SAMPLER_CUBEMAP,
-                "reflection map must a cubemap")) {
-            return nullptr;
-        }
+                "reflection map must a cubemap");
 
-        if (IBL_INTEGRATION == IBL_INTEGRATION_IMPORTANCE_SAMPLING) {
+        if constexpr (IBL_INTEGRATION == IBL_INTEGRATION_IMPORTANCE_SAMPLING) {
             mImpl->mReflectionsMap->generateMipmaps(engine);
         }
     }
 
     if (mImpl->mIrradianceMap) {
-        if (!ASSERT_POSTCONDITION_NON_FATAL(
+        ASSERT_PRECONDITION(
                 mImpl->mIrradianceMap->getTarget() == Texture::Sampler::SAMPLER_CUBEMAP,
-                "irradiance map must a cubemap")) {
-            return nullptr;
-        }
+                "irradiance map must a cubemap");
     }
 
     return upcast(engine).createIndirectLight(*this);
@@ -188,13 +187,13 @@ FIndirectLight::FIndirectLight(FEngine& engine, const Builder& builder) noexcept
         mIrradianceTexture = upcast(builder->mIrradianceMap);
     } else {
         // TODO: if needed, generate the irradiance map, this is an engine config
-        if (FEngine::CONFIG_IBL_USE_IRRADIANCE_MAP) {
+        if (CONFIG_IBL_USE_IRRADIANCE_MAP) {
         }
     }
 }
 
 void FIndirectLight::terminate(FEngine& engine) {
-    if (FEngine::CONFIG_IBL_USE_IRRADIANCE_MAP) {
+    if (CONFIG_IBL_USE_IRRADIANCE_MAP) {
         FEngine::DriverApi& driver = engine.getDriverApi();
         driver.destroyTexture(getIrradianceHwHandle());
     }

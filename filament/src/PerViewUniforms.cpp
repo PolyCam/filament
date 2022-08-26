@@ -29,9 +29,11 @@
 #include <filament/Options.h>
 #include <filament/TextureSampler.h>
 
-#include <private/filament/SibGenerator.h>
+#include <private/filament/EngineEnums.h>
+#include <private/filament/SibStructs.h>
 
 #include <math/mat4.h>
+
 
 namespace filament {
 
@@ -55,7 +57,7 @@ PerViewUniforms::PerViewUniforms(FEngine& engine) noexcept
     if (engine.getDFG().isValid()) {
         TextureSampler sampler(TextureSampler::MagFilter::LINEAR);
         mSamplers.setSampler(PerViewSib::IBL_DFG_LUT,
-                engine.getDFG().getTexture(), sampler.getSamplerParams());
+                { engine.getDFG().getTexture(), sampler.getSamplerParams() });
     }
 }
 
@@ -80,6 +82,7 @@ void PerViewUniforms::prepareCamera(const CameraInfo& camera) noexcept {
     s.viewFromClipMatrix  = viewFromClip;     // 1/projection
     s.clipFromWorldMatrix = clipFromWorld;    // projection * view
     s.worldFromClipMatrix = worldFromClip;    // 1/(projection * view)
+    s.clipTransform = camera.clipTransfrom;
     s.cameraPosition = float3{ camera.getPosition() };
     s.worldOffset = camera.getWorldOffset();
     s.cameraFar = camera.zf;
@@ -160,15 +163,15 @@ void PerViewUniforms::prepareSSAO(Handle<HwTexture> ssao,
             && options.resolution < 1.0f;
 
     // LINEAR filtering is only needed when AO is enabled and low-quality upsampling is used.
-    mSamplers.setSampler(PerViewSib::SSAO, ssao, {
+    mSamplers.setSampler(PerViewSib::SSAO, { ssao, {
         .filterMag = options.enabled && !highQualitySampling ?
                 SamplerMagFilter::LINEAR : SamplerMagFilter::NEAREST
-    });
+    }});
 
     const float edgeDistance = 1.0f / options.bilateralThreshold;
     auto& s = mUniforms.edit();
     s.aoSamplingQualityAndEdgeDistance =
-            options.enabled && highQualitySampling ? edgeDistance : 0.0f;
+            options.enabled ? (highQualitySampling ? edgeDistance : 0.0f) : -1.0f;
     s.aoBentNormals = options.enabled && options.bentNormals ? 1.0f : 0.0f;
 }
 
@@ -180,10 +183,10 @@ void PerViewUniforms::prepareSSR(Handle<HwTexture> ssr,
         float refractionLodOffset,
         ScreenSpaceReflectionsOptions const& ssrOptions) noexcept {
 
-    mSamplers.setSampler(PerViewSib::SSR, ssr, {
+    mSamplers.setSampler(PerViewSib::SSR, { ssr, {
         .filterMag = SamplerMagFilter::LINEAR,
         .filterMin = SamplerMinFilter::LINEAR_MIPMAP_LINEAR
-    });
+    }});
 
     auto& s = mUniforms.edit();
     s.refractionLodOffset = refractionLodOffset;
@@ -195,10 +198,10 @@ void PerViewUniforms::prepareHistorySSR(Handle<HwTexture> ssr,
         math::mat4f const& uvFromViewMatrix,
         ScreenSpaceReflectionsOptions const& ssrOptions) noexcept {
 
-    mSamplers.setSampler(PerViewSib::SSR, ssr, {
+    mSamplers.setSampler(PerViewSib::SSR, { ssr, {
         .filterMag = SamplerMagFilter::LINEAR,
         .filterMin = SamplerMinFilter::LINEAR
-    });
+    }});
 
     auto& s = mUniforms.edit();
     s.ssrReprojection = historyProjection;
@@ -211,7 +214,7 @@ void PerViewUniforms::prepareHistorySSR(Handle<HwTexture> ssr,
 
 void PerViewUniforms::prepareStructure(Handle<HwTexture> structure) noexcept {
     // sampler must be NEAREST
-    mSamplers.setSampler(PerViewSib::STRUCTURE, structure, {});
+    mSamplers.setSampler(PerViewSib::STRUCTURE, { structure, {}});
 }
 
 void PerViewUniforms::prepareDirectionalLight(
@@ -361,13 +364,13 @@ void PerViewUniforms::commit(backend::DriverApi& driver) noexcept {
         driver.updateBufferObject(mUniformBufferHandle, mUniforms.toBufferDescriptor(driver), 0);
     }
     if (mSamplers.isDirty()) {
-        driver.updateSamplerGroup(mSamplerGroupHandle, std::move(mSamplers.toCommandStream()));
+        driver.updateSamplerGroup(mSamplerGroupHandle, mSamplers.toBufferDescriptor(driver));
     }
 }
 
 void PerViewUniforms::bind(backend::DriverApi& driver) noexcept {
-    driver.bindUniformBuffer(BindingPoints::PER_VIEW, mUniformBufferHandle);
-    driver.bindSamplers(BindingPoints::PER_VIEW, mSamplerGroupHandle);
+    driver.bindUniformBuffer(+UniformBindingPoints::PER_VIEW, mUniformBufferHandle);
+    driver.bindSamplers(+SamplerBindingPoints::PER_VIEW, mSamplerGroupHandle);
 }
 
 void PerViewUniforms::unbindSamplers() noexcept {

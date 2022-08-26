@@ -637,6 +637,33 @@ public:
      */
     bool isFrontFaceWindingInverted() const noexcept;
 
+    /**
+     * Enables use of the stencil buffer.
+     *
+     * The stencil buffer is an 8-bit, per-fragment unsigned integer stored alongside the depth
+     * buffer. The stencil buffer is cleared at the beginning of a frame and discarded after the
+     * color pass.
+     *
+     * Each fragment's stencil value is set during rasterization by specifying stencil operations on
+     * a Material. The stencil buffer can be used as a mask for later rendering by setting a
+     * Material's stencil comparison function and reference value. Fragments that don't pass the
+     * stencil test are then discarded.
+     *
+     * Post-processing must be enabled in order to use the stencil buffer.
+     *
+     * A renderable's priority (see RenderableManager::setPriority) is useful to control the order
+     * in which primitives are drawn.
+     *
+     * @param enabled True to enable the stencil buffer, false disables it (default)
+     */
+    void setStencilBufferEnabled(bool enabled) noexcept;
+
+    /**
+     * Returns true if the stencil buffer is enabled.
+     * See setStencilBufferEnabled() for more information.
+     */
+    bool isStencilBufferEnabled() const noexcept;
+
     // for debugging...
 
     //! debugging: allows to entirely disable frustum culling. (culling enabled by default).
@@ -697,7 +724,7 @@ public:
         PickingQuery& query = pick(x, y, [](PickingQueryResult const& result, PickingQuery* pq) {
             void* user = pq->storage;
             (*static_cast<T**>(user)->*method)(result);
-        });
+        }, handler);
         query.storage[0] = instance;
     }
 
@@ -720,7 +747,7 @@ public:
             T* that = static_cast<T*>(user);
             (that->*method)(result);
             that->~T();
-        });
+        }, handler);
         new(query.storage) T(std::move(instance));
     }
 

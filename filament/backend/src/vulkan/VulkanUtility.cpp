@@ -607,6 +607,8 @@ VkImageViewType getImageViewType(SamplerType target) {
             return VK_IMAGE_VIEW_TYPE_CUBE;
         case SamplerType::SAMPLER_2D_ARRAY:
             return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        case SamplerType::SAMPLER_CUBEMAP_ARRAY:
+            return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
         case  SamplerType::SAMPLER_3D:
             return VK_IMAGE_VIEW_TYPE_3D;
         default:
@@ -640,8 +642,8 @@ VkImageLayout getDefaultImageLayout(TextureUsage usage) {
 
 VkShaderStageFlags getShaderStageFlags(ShaderStageFlags stageFlags) {
     VkShaderStageFlags flags = 0x0;
-    if (stageFlags.vertex)   flags |= VK_SHADER_STAGE_VERTEX_BIT;
-    if (stageFlags.fragment) flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+    if (any(stageFlags & ShaderStageFlags::VERTEX))     flags |= VK_SHADER_STAGE_VERTEX_BIT;
+    if (any(stageFlags & ShaderStageFlags::FRAGMENT))   flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
     return flags;
 }
 

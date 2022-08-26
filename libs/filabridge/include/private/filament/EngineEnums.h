@@ -19,6 +19,8 @@
 
 #include <backend/DriverEnums.h>
 
+#include <utils/BitmaskEnum.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -30,32 +32,35 @@ enum class PostProcessVariant : uint8_t {
     TRANSLUCENT
 };
 
-// Binding points for uniform buffers and sampler buffers.
-// Effectively, these are just names.
-namespace BindingPoints {
-    constexpr uint8_t PER_VIEW                   = 0;    // uniforms/samplers updated per view
-    constexpr uint8_t PER_RENDERABLE             = 1;    // uniforms/samplers updated per renderable
-    constexpr uint8_t PER_RENDERABLE_BONES       = 2;    // bones data, per renderable
-    constexpr uint8_t PER_RENDERABLE_MORPHING    = 3;    // morphing uniform/sampler updated per render primitive
-    constexpr uint8_t LIGHTS                     = 4;    // lights data array
-    constexpr uint8_t SHADOW                     = 5;    // punctual shadow data
-    constexpr uint8_t FROXEL_RECORDS             = 6;
-    constexpr uint8_t PER_MATERIAL_INSTANCE      = 7;    // uniforms/samplers updates per material
-    constexpr uint8_t COUNT                      = 8;
-    // These are limited by CONFIG_BINDING_COUNT (currently 12)
-}
+// Binding points for uniform buffers
+enum class UniformBindingPoints : uint8_t {
+    PER_VIEW                   = 0,    // uniforms updated per view
+    PER_RENDERABLE             = 1,    // uniforms updated per renderable
+    PER_RENDERABLE_BONES       = 2,    // bones data, per renderable
+    PER_RENDERABLE_MORPHING    = 3,    // morphing uniform/sampler updated per render primitive
+    LIGHTS                     = 4,    // lights data array
+    SHADOW                     = 5,    // punctual shadow data
+    FROXEL_RECORDS             = 6,
+    PER_MATERIAL_INSTANCE      = 7,    // uniforms updates per material
+    // Update utils::Enum::count<>() below when adding values here
+    // These are limited by CONFIG_BINDING_COUNT (currently 10)
+};
 
-static_assert(BindingPoints::COUNT <= backend::CONFIG_BINDING_COUNT);
-
-static_assert(BindingPoints::PER_MATERIAL_INSTANCE == BindingPoints::COUNT - 1,
-        "Dynamically sized sampler buffer must be the last binding point.");
+// Binding points for sampler buffers.
+enum class SamplerBindingPoints : uint8_t {
+    PER_VIEW                   = 0,    // samplers updated per view
+    PER_RENDERABLE_MORPHING    = 1,    // morphing sampler updated per render primitive
+    PER_MATERIAL_INSTANCE      = 2,    // samplers updates per material
+    // Update utils::Enum::count<>() below when adding values here
+    // These are limited by CONFIG_SAMPLER_BINDING_COUNT (currently 4)
+};
 
 // This value is limited by UBO size, ES3.0 only guarantees 16 KiB.
 // Values <= 256, use less CPU and GPU resources.
 constexpr size_t CONFIG_MAX_LIGHT_COUNT = 256;
 constexpr size_t CONFIG_MAX_LIGHT_INDEX = CONFIG_MAX_LIGHT_COUNT - 1;
 
-// The maximum number of spot lights in a scene that can cast shadows.
+// The maximum number of spotlights in a scene that can cast shadows.
 // There is currently a limit to 14 spot shadow due to how we store the culling result
 // (see View.h).
 constexpr size_t CONFIG_MAX_SHADOW_CASTING_SPOTS = 14;
@@ -63,14 +68,46 @@ constexpr size_t CONFIG_MAX_SHADOW_CASTING_SPOTS = 14;
 // The maximum number of shadow cascades that can be used for directional lights.
 constexpr size_t CONFIG_MAX_SHADOW_CASCADES = 4;
 
-// This value is also limited by UBO size, ES3.0 only guarantees 16 KiB.
-// We store 64 bytes per bone. Must be a power-of-two.
+// The maximum UBO size, in bytes. This value is set to 16 KiB due to the ES3.0 spec.
+// Note that this value constrains the maximum number of skinning bones, morph targets,
+// instances, and shadow casting spotlights.
+constexpr size_t CONFIG_MINSPEC_UBO_SIZE = 16384;
+
+// HACK ALERT
+// ----------
+// If you modify the values below, you will need to update the hack in OpenGLProgram.cpp!
+// The maximum number of instances that Filament automatically creates as an optimization.
+// Use a much smaller number for WebGL as a workaround for the following Chrome issues:
+//     https://crbug.com/1348017 Compiling GLSL is very slow with struct arrays
+//     https://crbug.com/1348363 Lighting looks wrong with D3D11 but not OpenGL
+#if defined(__EMSCRIPTEN__)
+constexpr size_t CONFIG_MAX_INSTANCES = 8;
+#else
+constexpr size_t CONFIG_MAX_INSTANCES = 64;
+#endif
+
+// The maximum number of bones that can be associated with a single renderable.
+// We store 32 bytes per bone. Must be a power-of-two, and must fit within CONFIG_MINSPEC_UBO_SIZE.
 constexpr size_t CONFIG_MAX_BONE_COUNT = 256;
 
-// The maximum number of morph target count.
-// This value is limited by ES3.0, ES3.0 only guarantees 256 layers in an array texture.
+// The maximum number of morph targets associated with a single renderable.
+// Note that ES3.0 only guarantees 256 layers in an array texture.
+// Furthermore, this is constrained by CONFIG_MINSPEC_UBO_SIZE (16 bytes per morph target).
 constexpr size_t CONFIG_MAX_MORPH_TARGET_COUNT = 256;
 
 } // namespace filament
+
+template<>
+struct utils::EnableIntegerOperators<filament::UniformBindingPoints> : public std::true_type {};
+template<>
+struct utils::EnableIntegerOperators<filament::SamplerBindingPoints> : public std::true_type {};
+
+template<>
+inline constexpr size_t utils::Enum::count<filament::UniformBindingPoints>() { return 8; }
+template<>
+inline constexpr size_t utils::Enum::count<filament::SamplerBindingPoints>() { return 3; }
+
+static_assert(utils::Enum::count<filament::UniformBindingPoints>() <= filament::backend::CONFIG_UNIFORM_BINDING_COUNT);
+static_assert(utils::Enum::count<filament::SamplerBindingPoints>() <= filament::backend::CONFIG_SAMPLER_BINDING_COUNT);
 
 #endif // TNT_FILAMENT_ENGINE_ENUM_H

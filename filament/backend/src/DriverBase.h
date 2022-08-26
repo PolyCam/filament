@@ -28,7 +28,6 @@
 
 #include "private/backend/Dispatcher.h"
 #include "private/backend/Driver.h"
-#include "private/backend/SamplerGroup.h"
 
 #include <condition_variable>
 #include <memory>
@@ -104,10 +103,7 @@ struct HwProgram : public HwBase {
 };
 
 struct HwSamplerGroup : public HwBase {
-    // NOTE: we have to use out-of-line allocation here because the size of a Handle<> is limited
-    std::unique_ptr<SamplerGroup> sb; // FIXME: this shouldn't depend on filament::SamplerGroup
     HwSamplerGroup() noexcept = default;
-    explicit HwSamplerGroup(size_t size) noexcept : sb(new SamplerGroup(size)) { }
 };
 
 struct HwTexture : public HwBase {

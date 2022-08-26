@@ -25,6 +25,8 @@
 
 #include <math/vec4.h>
 
+#include <initializer_list>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -34,6 +36,15 @@ namespace filament {
 
 class UniformInterfaceBlock {
 public:
+    struct UniformBlockEntry {
+        std::string_view name;
+        uint32_t size;
+        backend::UniformType type;
+        backend::Precision precision{};
+        std::string_view structName{};
+        uint32_t stride{};
+    };
+
     UniformInterfaceBlock();
 
     UniformInterfaceBlock(const UniformInterfaceBlock& rhs) = delete;
@@ -46,48 +57,6 @@ public:
 
     using Type = backend::UniformType;
     using Precision = backend::Precision;
-
-    class Builder {
-    public:
-        Builder() noexcept;
-        ~Builder() noexcept;
-
-        // Give a name to this uniform interface block
-        Builder& name(utils::CString interfaceBlockName);
-
-        // Add a uniform field
-        Builder& add(utils::CString uniformName,
-                Type type, Precision precision = Precision::DEFAULT);
-
-        // Add a uniform array
-        Builder& add(utils::CString uniformName, size_t size,
-                Type type, Precision precision = Precision::DEFAULT);
-
-        // Add a known struct field
-        Builder& add(utils::CString uniformName,
-                utils::CString structName, size_t stride);
-
-        // Add a known struct array
-        Builder& add(utils::CString uniformName, size_t size,
-                utils::CString structName, size_t stride);
-
-        // build and return the UniformInterfaceBlock
-        UniformInterfaceBlock build();
-    private:
-        friend class UniformInterfaceBlock;
-        struct Entry {
-            Entry(utils::CString name, uint32_t size, Type type, Precision precision) noexcept;
-            Entry(utils::CString name, uint32_t size, utils::CString structName, size_t stride) noexcept;
-            utils::CString name;
-            uint32_t size;
-            Type type;
-            Precision precision{};
-            utils::CString structName{};
-            uint32_t stride;
-        };
-        utils::CString mName;
-        std::vector<Entry> mEntries;
-    };
 
     struct UniformInfo {
         utils::CString name;        // name of this uniform
@@ -104,8 +73,27 @@ public:
         }
     };
 
+    class Builder {
+    public:
+        Builder() noexcept;
+        ~Builder() noexcept;
+
+        // Give a name to this uniform interface block
+        Builder& name(std::string_view interfaceBlockName);
+
+        // a list of uniform fields
+        Builder& add(std::initializer_list<UniformBlockEntry> list);
+
+        // build and return the UniformInterfaceBlock
+        UniformInterfaceBlock build();
+    private:
+        friend class UniformInterfaceBlock;
+        utils::CString mName;
+        std::vector<UniformInfo> mEntries;
+    };
+
     // name of this uniform interface block
-    const utils::CString& getName() const noexcept { return mName; }
+    std::string_view getName() const noexcept { return { mName.data(), mName.size() }; }
 
     // size in bytes needed to store the uniforms described by this interface block in a UniformBuffer
     size_t getSize() const noexcept { return mSize; }
@@ -116,11 +104,11 @@ public:
     }
 
     // negative value if name doesn't exist or Panic if exceptions are enabled
-    ssize_t getUniformOffset(const char* name, size_t index) const;
+    ssize_t getUniformOffset(std::string_view name, size_t index) const;
 
-    UniformInfo const* getUniformInfo(const char* name) const;
+    UniformInfo const* getUniformInfo(std::string_view name) const;
 
-    bool hasUniform(const char* name) const noexcept {
+    bool hasUniform(std::string_view name) const noexcept {
         return mInfoMap.find(name) != mInfoMap.end();
     }
 
@@ -136,7 +124,7 @@ private:
 
     utils::CString mName;
     utils::FixedCapacityVector<UniformInfo> mUniformsInfoList;
-    std::unordered_map<const char*, uint32_t, utils::hashCStrings, utils::equalCStrings> mInfoMap;
+    std::unordered_map<std::string_view , uint32_t> mInfoMap;
     uint32_t mSize = 0; // size in bytes rounded to multiple of 4
 };
 

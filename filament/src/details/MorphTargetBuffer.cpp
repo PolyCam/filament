@@ -16,14 +16,13 @@
 
 #include "details/MorphTargetBuffer.h"
 
-#include "private/filament/SibGenerator.h"
+#include <private/filament/SibStructs.h>
 
-#include "details/Engine.h"
+#include <details/Engine.h>
 
 #include "FilamentAPI-impl.h"
 
 #include <math/mat4.h>
-
 #include <math/norm.h>
 
 namespace filament {
@@ -123,9 +122,9 @@ FMorphTargetBuffer::FMorphTargetBuffer(FEngine& engine, const Builder& builder)
     // create and update sampler group
     mSbHandle = driver.createSamplerGroup(PerRenderPrimitiveMorphingSib::SAMPLER_COUNT);
     SamplerGroup samplerGroup(PerRenderPrimitiveMorphingSib::SAMPLER_COUNT);
-    samplerGroup.setSampler(PerRenderPrimitiveMorphingSib::POSITIONS, mPbHandle, {});
-    samplerGroup.setSampler(PerRenderPrimitiveMorphingSib::TANGENTS, mTbHandle, {});
-    driver.updateSamplerGroup(mSbHandle, std::move(samplerGroup.toCommandStream()));
+    samplerGroup.setSampler(PerRenderPrimitiveMorphingSib::POSITIONS, { mPbHandle, {}});
+    samplerGroup.setSampler(PerRenderPrimitiveMorphingSib::TANGENTS, { mTbHandle, {}});
+    driver.updateSamplerGroup(mSbHandle, samplerGroup.toBufferDescriptor(driver));
 }
 
 void FMorphTargetBuffer::terminate(FEngine& engine) {

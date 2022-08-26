@@ -48,12 +48,6 @@
 #include <string>
 #include <fstream>
 
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(IOS)
-#define USE_FILESYSTEM 0
-#else
-#define USE_FILESYSTEM 1
-#endif
-
 using namespace filament;
 using namespace filament::math;
 using namespace utils;
@@ -70,19 +64,14 @@ using UriDataCache = tsl::robin_map<std::string, gltfio::ResourceLoader::BufferD
 using TextureProviderList = tsl::robin_map<std::string, TextureProvider*>;
 
 struct ResourceLoader::Impl {
-    Impl(const ResourceConfiguration& config) {
-        mGltfPath = std::string(config.gltfPath ? config.gltfPath : "");
-        mEngine = config.engine;
-        mNormalizeSkinningWeights = config.normalizeSkinningWeights;
-        mRecomputeBoundingBoxes = config.recomputeBoundingBoxes;
-        mIgnoreBindTransform = config.ignoreBindTransform;
-    }
+    Impl(const ResourceConfiguration& config) :
+        mEngine(config.engine),
+        mNormalizeSkinningWeights(config.normalizeSkinningWeights),
+        mGltfPath(config.gltfPath ? config.gltfPath : "") {}
 
-    Engine* mEngine;
-    bool mNormalizeSkinningWeights;
-    bool mRecomputeBoundingBoxes;
-    bool mIgnoreBindTransform;
-    std::string mGltfPath;
+    Engine* const mEngine;
+    const bool mNormalizeSkinningWeights;
+    const std::string mGltfPath;
 
     // User-provided resource data with URI string keys, populated with addResourceData().
     // This is used on platforms without traditional file systems, such as Android, iOS, and WebGL.
@@ -96,9 +85,11 @@ struct ResourceLoader::Impl {
     FilepathTextureCache mFilepathTextureCache;
 
     FFilamentAsset* mAsyncAsset = nullptr;
+    size_t mRemainingTextureDownloads = 0;
 
+    void addResourceData(const char* uri, BufferDescriptor&& buffer);
     void computeTangents(FFilamentAsset* asset);
-    bool createTextures(FFilamentAsset* asset, bool async);
+    void createTextures(FFilamentAsset* asset, bool async);
     void cancelTextureDecoding();
     Texture* getOrCreateTexture(FFilamentAsset* asset, const TextureSlot& tb);
     ~Impl();
@@ -302,20 +293,54 @@ ResourceLoader::~ResourceLoader() {
 }
 
 void ResourceLoader::addResourceData(const char* uri, BufferDescriptor&& buffer) {
+    pImpl->addResourceData(uri, std::move(buffer));
+}
+
+static bool endsWith(std::string_view expr, std::string_view ending) {
+    if (expr.length() >= ending.length()) {
+        return (expr.compare(expr.length() - ending.length(), ending.length(), ending) == 0);
+    }
+    return false;
+}
+
+// TODO: This is not a great way to determine if a resource is a texture, but we can remove it after
+// gltfio gains support for concurrent downloading of vertex data:
+// https://github.com/google/filament/issues/5909
+static bool isTexture(const char* uri) {
+    using namespace std::literals;
+    std::string_view urisv(uri);
+    if (endsWith(urisv, ".png"sv)) {
+        return true;
+    }
+    if (endsWith(urisv, ".ktx2"sv)) {
+        return true;
+    }
+    if (endsWith(urisv, ".jpg"sv) || endsWith(urisv, ".jpeg"sv)) {
+        return true;
+    }
+    return false;
+}
+
+void ResourceLoader::Impl::addResourceData(const char* uri, BufferDescriptor&& buffer) {
     // Start an async marker the first time this is called and end it when
     // finalization begins. This marker provides a rough indicator of how long
     // the client is taking to load raw data blobs from storage.
-    if (pImpl->mUriDataCache.empty()) {
+    if (mUriDataCache.empty()) {
         SYSTRACE_CONTEXT();
         SYSTRACE_ASYNC_BEGIN("addResourceData", 1);
     }
     // NOTE: replacing an existing item in a robin map does not seem to behave as expected.
     // To work around this, we explicitly erase the old element if it already exists.
-    auto iter = pImpl->mUriDataCache.find(uri);
-    if (iter != pImpl->mUriDataCache.end()) {
-        pImpl->mUriDataCache.erase(iter);
+    auto iter = mUriDataCache.find(uri);
+    if (iter != mUriDataCache.end()) {
+        mUriDataCache.erase(iter);
     }
-    pImpl->mUriDataCache.emplace(uri, std::move(buffer));
+    mUriDataCache.emplace(uri, std::move(buffer));
+
+    // If this is a texture and async loading has already started, add a new decoder job.
+    if (isTexture(uri) && mAsyncAsset && mRemainingTextureDownloads > 0) {
+        createTextures(mAsyncAsset, true);
+    }
 }
 
 bool ResourceLoader::hasResourceData(const char* uri) const {
@@ -336,78 +361,53 @@ bool ResourceLoader::loadResources(FFilamentAsset* asset, bool async) {
     SYSTRACE_CONTEXT();
     SYSTRACE_ASYNC_END("addResourceData", 1);
 
+    if (asset->mResourcesLoaded) {
+        return false;
+    }
+    asset->mResourcesLoaded = true;
+
     // Clear our texture caches. Previous calls to loadResources may have populated these, but the
     // Texture objects could have since been destroyed.
     pImpl->mBufferTextureCache.clear();
     pImpl->mFilepathTextureCache.clear();
 
-    if (asset->mResourcesLoaded) {
-        return false;
-    }
     const cgltf_data* gltf = asset->mSourceAsset->hierarchy;
     cgltf_options options {};
 
-    // For emscripten and Android builds we have a custom implementation of cgltf_load_buffers which
-    // looks inside a cache of externally-supplied data blobs, rather than loading from the
-    // filesystem.
+    // For emscripten and Android builds we supply a custom file reader callback that looks inside a
+    // cache of externally-supplied data blobs, rather than loading from the filesystem.
 
     SYSTRACE_NAME_BEGIN("Load buffers");
-    #if !USE_FILESYSTEM
+    #if !GLTFIO_USE_FILESYSTEM
 
-    if (gltf->buffers_count && !gltf->buffers[0].data && !gltf->buffers[0].uri && gltf->bin) {
-        if (gltf->bin_size < gltf->buffers[0].size) {
-            slog.e << "Bad size." << io::endl;
-            return false;
-        }
-        gltf->buffers[0].data = (void*) gltf->bin;
-    }
+    struct Closure {
+        Impl* impl;
+        const cgltf_data* gltf;
+    };
 
-    bool missingResources = false;
+    Closure closure = { pImpl, gltf };
 
-    for (cgltf_size i = 0; i < gltf->buffers_count; ++i) {
-        if (gltf->buffers[i].data) {
-            continue;
-        }
-        const char* uri = gltf->buffers[i].uri;
-        if (uri == nullptr) {
-            continue;
-        }
-        if (strncmp(uri, "data:", 5) == 0) {
-            const char* comma = strchr(uri, ',');
-            if (comma && comma - uri >= 7 && strncmp(comma - 7, ";base64", 7) == 0) {
-                cgltf_result res = cgltf_load_buffer_base64(&options, gltf->buffers[i].size,
-                        comma + 1, &gltf->buffers[i].data);
-                if (res != cgltf_result_success) {
-                    slog.e << "Unable to load " << uri << io::endl;
-                    return false;
-                }
-            } else {
-                slog.e << "Unable to load " << uri << io::endl;
-                return false;
-            }
-        } else if (strstr(uri, "://") == nullptr) {
-            auto iter = pImpl->mUriDataCache.find(uri);
-            if (iter == pImpl->mUriDataCache.end()) {
-                slog.e << "Unable to load external resource: " << uri << io::endl;
-                missingResources = true;
-            }
-            // Make a copy to allow cgltf_free() to work as expected and prevent a double-free.
-            // TODO: Future versions of CGLTF will make this easier, see the following ticket.
-            // https://github.com/jkuhlmann/cgltf/issues/94
-            gltf->buffers[i].data = malloc(iter->second.size);
-            memcpy(gltf->buffers[i].data, iter->second.buffer, iter->second.size);
+    options.file.user_data = &closure;
+
+    options.file.read = [](const cgltf_memory_options* memoryOpts,
+            const cgltf_file_options* fileOpts, const char* path, cgltf_size* size, void** data) {
+        Closure* closure = (Closure*) fileOpts->user_data;
+        auto& uriDataCache = closure->impl->mUriDataCache;
+
+        if (auto iter = uriDataCache.find(path); iter != uriDataCache.end()) {
+            *size = iter->second.size;
+            *data = iter->second.buffer;
         } else {
-            slog.e << "Unable to load " << uri << io::endl;
-            return false;
+            // Even if we don't find the given resource in the cache, we still return a successful
+            // error code, because we allow downloads to finish after the decoding work starts.
+           *size = 0;
+           *data = 0;
         }
-    }
 
-    if (missingResources) {
-        slog.e << "Some external resources have not been added via addResourceData()" << io::endl;
-        return false;
-    }
+        return cgltf_result_success;
+    };
 
-    #else
+    #endif
 
     // Read data from the file system and base64 URIs.
     cgltf_result result = cgltf_load_buffers(&options, (cgltf_data*) gltf, pImpl->mGltfPath.c_str());
@@ -416,7 +416,6 @@ bool ResourceLoader::loadResources(FFilamentAsset* asset, bool async) {
         return false;
     }
 
-    #endif
     SYSTRACE_NAME_END();
 
     #ifndef NDEBUG
@@ -436,23 +435,11 @@ bool ResourceLoader::loadResources(FFilamentAsset* asset, bool async) {
         if (pImpl->mNormalizeSkinningWeights) {
             normalizeSkinningWeights(asset);
         }
-        if (!asset->isInstanced()) {
-            importSkins(gltf, asset->mNodeMap, asset->mSkins);
-        } else {
-            // NOTE: This takes care of up-front instances, but dynamically added instances also
-            // need to import the skin data, which is done in AssetLoader.
-            for (FFilamentInstance* instance : asset->mInstances) {
-                importSkins(gltf, instance->nodeMap, instance->skins);
-            }
+        // NOTE: This takes care of up-front instances, but dynamically added instances also
+        // need to import the skin data, which is done in AssetLoader.
+        for (FFilamentInstance* instance : asset->mInstances) {
+            importSkins(gltf, instance->nodeMap, instance->skins);
         }
-    }
-
-    if (pImpl->mRecomputeBoundingBoxes) {
-        // asset->mSkins is unused for instanced assets
-        if (!pImpl->mIgnoreBindTransform) {
-            pImpl->mIgnoreBindTransform = asset->isInstanced();
-        }
-        updateBoundingBoxes(asset);
     }
 
     Engine& engine = *pImpl->mEngine;
@@ -532,8 +519,14 @@ bool ResourceLoader::loadResources(FFilamentAsset* asset, bool async) {
     // we need to generate the contents of a GPU buffer by processing one or more CPU buffer(s).
     pImpl->computeTangents(asset);
 
+    // If any decoding jobs are still underway from a previous load, wait for them to finish.
+    for (const auto& iter : pImpl->mTextureProviders) {
+        iter.second->waitForCompletion();
+        iter.second->updateQueue();
+    }
+
     // Finally, create Filament Textures and begin loading image files.
-    asset->mResourcesLoaded = pImpl->createTextures(asset, async);
+    pImpl->createTextures(asset, async);
 
     // Non-textured renderables are now considered ready, and we can guarantee that no new
     // materials or textures will be added. notify the dependency graph.
@@ -541,7 +534,7 @@ bool ResourceLoader::loadResources(FFilamentAsset* asset, bool async) {
 
     asset->createAnimators();
 
-    return asset->mResourcesLoaded;
+    return true;
 }
 
 bool ResourceLoader::asyncBeginLoad(FilamentAsset* asset) {
@@ -569,7 +562,8 @@ float ResourceLoader::asyncGetLoadProgress() const {
         pushedCount += iter.second->getPushedCount();
         poppedCount += iter.second->getPoppedCount();
     }
-    return pushedCount == 0 ? 1 : (float(poppedCount) / pushedCount);
+    const size_t pendingCount = pushedCount + pImpl->mRemainingTextureDownloads;
+    return pendingCount == 0 ? 1 : (float(poppedCount) / pendingCount);
 }
 
 void ResourceLoader::asyncUpdateLoad() {
@@ -630,6 +624,8 @@ Texture* ResourceLoader::Impl::getOrCreateTexture(FFilamentAsset* asset, const T
     }
 
     // Check if the texture slot is a data URI.
+    // Note that this is a data URI in an image, not a buffer. Data URI's in buffers are decoded
+    // by the cgltf_load_buffers() function.
     else if (dataUriContent) {
         if (auto iter = mBufferTextureCache.find(uri); iter != mBufferTextureCache.end()) {
             free((void*)dataUriContent);
@@ -653,7 +649,7 @@ Texture* ResourceLoader::Impl::getOrCreateTexture(FFilamentAsset* asset, const T
     }
 
     // Finally, try the file system.
-    else if constexpr (USE_FILESYSTEM) {
+    else if constexpr (GLTFIO_USE_FILESYSTEM) {
         if (auto iter = mFilepathTextureCache.find(uri); iter != mFilepathTextureCache.end()) {
             return iter->second;
         }
@@ -674,10 +670,10 @@ Texture* ResourceLoader::Impl::getOrCreateTexture(FFilamentAsset* asset, const T
             mFilepathTextureCache[uri] = texture;
         }
 
-    // If the platform does not have a filesystem, emit an error and move on.
     } else {
-        slog.e << "Unable to load " << uri << io::endl;
-        asset->mDependencyGraph.markAsError(tb.materialInstance);
+        // If we reach here, the app has not yet called addResourceData() for this texture,
+        // perhaps because it is still being downloaded.
+        mRemainingTextureDownloads++;
         return nullptr;
     }
 
@@ -687,7 +683,7 @@ Texture* ResourceLoader::Impl::getOrCreateTexture(FFilamentAsset* asset, const T
                 << provider->getPushMessage() << io::endl;
         asset->mDependencyGraph.markAsError(tb.materialInstance);
     } else {
-        asset->takeOwnership(texture);
+        asset->attachTexture(texture);
     }
 
     return texture;
@@ -700,14 +696,9 @@ void ResourceLoader::Impl::cancelTextureDecoding() {
     mAsyncAsset = nullptr;
 }
 
-bool ResourceLoader::Impl::createTextures(FFilamentAsset* asset, bool async) {
-    // If any decoding jobs are still underway, wait for them to finish.
-    for (const auto& iter : mTextureProviders) {
-        iter.second->waitForCompletion();
-        iter.second->updateQueue();
-    }
-
-    // Create new texture objects if they are not cached.
+void ResourceLoader::Impl::createTextures(FFilamentAsset* asset, bool async) {
+    // Create new texture objects if they are not cached and kick off decoding jobs.
+    mRemainingTextureDownloads = 0;
     for (auto slot : asset->mTextureSlots) {
         if (Texture* texture = getOrCreateTexture(asset, slot)) {
             asset->bindTexture(slot, texture);
@@ -718,15 +709,13 @@ bool ResourceLoader::Impl::createTextures(FFilamentAsset* asset, bool async) {
     assert_invariant(UTILS_HAS_THREADING || async);
 
     if (async) {
-        return true;
+        return;
     }
 
     for (const auto& iter : mTextureProviders) {
         iter.second->waitForCompletion();
         iter.second->updateQueue();
     }
-
-    return true;
 }
 
 void ResourceLoader::Impl::computeTangents(FFilamentAsset* asset) {
@@ -758,7 +747,7 @@ void ResourceLoader::Impl::computeTangents(FFilamentAsset* asset) {
         }
     }
     // Create a job description for morph targets.
-    NodeMap& nodeMap = asset->isInstanced() ? asset->mInstances[0]->nodeMap : asset->mNodeMap;
+    const NodeMap& nodeMap = asset->mInstances[0]->nodeMap;
     for (auto iter : nodeMap) {
         cgltf_node const* node = iter.first;
         cgltf_mesh const* mesh = node->mesh;
@@ -855,178 +844,6 @@ void ResourceLoader::normalizeSkinningWeights(FFilamentAsset* asset) const {
             }
         }
     }
-}
-
-void ResourceLoader::updateBoundingBoxes(FFilamentAsset* asset) const {
-    SYSTRACE_CALL();
-    auto& rm = pImpl->mEngine->getRenderableManager();
-    auto& tm = pImpl->mEngine->getTransformManager();
-    NodeMap& nodeMap = asset->isInstanced() ? asset->mInstances[0]->nodeMap : asset->mNodeMap;
-
-    // The purpose of the root node is to give the client a place for custom transforms.
-    // Since it is not part of the source model, it should be ignored when computing the
-    // bounding box.
-    TransformManager::Instance root = tm.getInstance(asset->getRoot());
-    std::vector<Entity> modelRoots(tm.getChildCount(root));
-    tm.getChildren(root, modelRoots.data(), modelRoots.size());
-    for (auto e : modelRoots) {
-        tm.setParent(tm.getInstance(e), 0);
-    }
-
-    auto computeBoundingBox = [](const cgltf_primitive* prim, Aabb* result) {
-        Aabb aabb;
-        for (cgltf_size slot = 0; slot < prim->attributes_count; slot++) {
-            const cgltf_attribute& attr = prim->attributes[slot];
-            const cgltf_accessor* accessor = attr.data;
-            const size_t dim = cgltf_num_components(accessor->type);
-            if (attr.type == cgltf_attribute_type_position && dim >= 3) {
-                std::vector<float> unpacked(accessor->count * dim);
-                cgltf_accessor_unpack_floats(accessor, unpacked.data(), unpacked.size());
-                for (cgltf_size i = 0, j = 0, n = accessor->count; i < n; ++i, j += dim) {
-                    float3 pt(unpacked[j + 0], unpacked[j + 1], unpacked[j + 2]);
-                    aabb.min = min(aabb.min, pt);
-                    aabb.max = max(aabb.max, pt);
-                }
-                break;
-            }
-        }
-        *result = aabb;
-    };
-
-    struct Prim {
-        cgltf_primitive const* prim;
-        Skin const* skin;
-        Entity node;
-    };
-
-    auto computeBoundingBoxSkinned = [&](const Prim& prim, Aabb* result) {
-        FixedCapacityVector<float3> verts;
-        FixedCapacityVector<uint4> joints;
-        FixedCapacityVector<float4> weights;
-        for (cgltf_size slot = 0, n = prim.prim->attributes_count; slot < n; ++slot) {
-            const cgltf_attribute& attr = prim.prim->attributes[slot];
-            const cgltf_accessor& accessor = *attr.data;
-            switch (attr.type) {
-            case cgltf_attribute_type_position:
-                verts = FixedCapacityVector<float3>(accessor.count);
-                cgltf_accessor_unpack_floats(&accessor, &verts.data()->x, accessor.count * 3);
-                break;
-            case cgltf_attribute_type_joints: {
-                FixedCapacityVector<float4> tmp(accessor.count);
-                cgltf_accessor_unpack_floats(&accessor, &tmp.data()->x, accessor.count * 4);
-                joints = FixedCapacityVector<uint4>(accessor.count);
-                for (size_t i = 0, n = accessor.count; i < n; ++i) {
-                    joints[i] = uint4(tmp[i]);
-                }
-                break;
-            }
-            case cgltf_attribute_type_weights:
-                weights = FixedCapacityVector<float4>(accessor.count);
-                cgltf_accessor_unpack_floats(&accessor, &weights.data()->x, accessor.count * 4);
-                break;
-            default:
-                break;
-            }
-        }
-
-        Aabb aabb;
-        TransformManager::Instance transformable = tm.getInstance(prim.node);
-        const mat4f inverseGlobalTransform = inverse(tm.getWorldTransform(transformable));
-        for (size_t i = 0, n = verts.size(); i < n; i++) {
-            float3 point = verts[i];
-            mat4f tmp = mat4f(0.0f);
-            for (size_t j = 0; j < 4; j++) {
-                size_t jointIndex = joints[i][j];
-                Entity jointEntity = prim.skin->joints[jointIndex];
-                mat4f globalJointTransform = tm.getWorldTransform(tm.getInstance(jointEntity));
-                mat4f inverseBindMatrix = prim.skin->inverseBindMatrices[jointIndex];
-                tmp += weights[i][j] * globalJointTransform * inverseBindMatrix;
-            }
-            mat4f skinMatrix = inverseGlobalTransform * tmp;
-            if (!pImpl->mNormalizeSkinningWeights) {
-                skinMatrix /= skinMatrix[3].w;
-            }
-            float3 skinnedPoint = (point.x * skinMatrix[0] +
-                    point.y * skinMatrix[1] + point.z * skinMatrix[2] + skinMatrix[3]).xyz;
-            aabb.min = min(aabb.min, skinnedPoint);
-            aabb.max = max(aabb.max, skinnedPoint);
-        }
-        *result = aabb;
-    };
-
-    // Collect all mesh primitives that we wish to find bounds for. For each mesh primitive, we also
-    // collect the skin it is bound to (nullptr if not skinned) for bounds computation.
-    size_t primCount = 0;
-    for (auto iter : nodeMap) {
-        const cgltf_mesh* mesh = iter.first->mesh;
-        if (mesh) {
-            primCount += mesh->primitives_count;
-        }
-    }
-    auto primitives = FixedCapacityVector<Prim>::with_capacity(primCount);
-    const cgltf_skin* baseSkin = &asset->mSourceAsset->hierarchy->skins[0];
-    for (auto iter : nodeMap) {
-        const cgltf_mesh* mesh = iter.first->mesh;
-        if (mesh) {
-            for (cgltf_size index = 0, nprims = mesh->primitives_count; index < nprims; ++index) {
-                primitives.push_back({&mesh->primitives[index], nullptr, iter.second});
-            }
-            if (cgltf_skin* const skin = iter.first->skin; skin) {
-                primitives.back().skin = &asset->mSkins[skin - baseSkin];
-            }
-        }
-    }
-
-    // Kick off a bounding box job for every primitive.
-    FixedCapacityVector<Aabb> bounds(primitives.size());
-    JobSystem* js = &pImpl->mEngine->getJobSystem();
-    JobSystem::Job* parent = js->createJob();
-    for (size_t i = 0; i < primitives.size(); ++i) {
-        Aabb* result = &bounds[i];
-        if (pImpl->mIgnoreBindTransform || primitives[i].skin == nullptr) {
-            cgltf_primitive const* prim = primitives[i].prim;
-            js->run(jobs::createJob(*js, parent, [prim, result, computeBoundingBox] {
-                computeBoundingBox(prim, result);
-            }));
-        } else {
-            const Prim& prim = primitives[i];
-            js->run(jobs::createJob(*js, parent, [&prim, result, computeBoundingBoxSkinned] {
-                computeBoundingBoxSkinned(prim, result);
-            }));
-        }
-    }
-    js->runAndWait(parent);
-
-    // Compute the asset-level bounding box.
-    size_t primIndex = 0;
-    Aabb assetBounds;
-    for (auto iter : nodeMap) {
-        const cgltf_mesh* mesh = iter.first->mesh;
-        if (mesh) {
-            // Find the object-space bounds for the renderable by unioning the bounds of each prim.
-            Aabb aabb;
-            for (cgltf_size index = 0, nprims = mesh->primitives_count; index < nprims; ++index) {
-                Aabb primBounds = bounds[primIndex++];
-                aabb.min = min(aabb.min, primBounds.min);
-                aabb.max = max(aabb.max, primBounds.max);
-            }
-            auto renderable = rm.getInstance(iter.second);
-            rm.setAxisAlignedBoundingBox(renderable, Box().set(aabb.min, aabb.max));
-
-            // Transform this bounding box, then update the asset-level bounding box.
-            auto transformable = tm.getInstance(iter.second);
-            const mat4f worldTransform = tm.getWorldTransform(transformable);
-            const Aabb transformed = aabb.transform(worldTransform);
-            assetBounds.min = min(assetBounds.min, transformed.min);
-            assetBounds.max = max(assetBounds.max, transformed.max);
-        }
-    }
-
-    for (auto e : modelRoots) {
-        tm.setParent(tm.getInstance(e), root);
-    }
-
-    asset->mBoundingBox = assetBounds;
 }
 
 } // namespace filament::gltfio

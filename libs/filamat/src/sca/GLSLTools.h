@@ -124,12 +124,14 @@ public:
     bool analyzeFragmentShader(const std::string& shaderCode,
             filament::backend::ShaderModel model,
             MaterialBuilder::MaterialDomain materialDomain,
-            MaterialBuilder::TargetApi targetApi, bool hasCustomSurfaceShading) const noexcept;
+            MaterialBuilder::TargetApi targetApi, bool hasCustomSurfaceShading,
+            MaterialInfo const& info) const noexcept;
 
     bool analyzeVertexShader(const std::string& shaderCode,
             filament::backend::ShaderModel model,
             MaterialBuilder::MaterialDomain materialDomain,
-            MaterialBuilder::TargetApi targetApi) const noexcept;
+            MaterialBuilder::TargetApi targetApi,
+            MaterialInfo const& info) const noexcept;
 
     // Public for unit tests.
     using Property = MaterialBuilder::Property;
@@ -141,7 +143,7 @@ public:
             const std::string& shaderCode,
             MaterialBuilder::PropertyList& properties,
             MaterialBuilder::TargetApi targetApi = MaterialBuilder::TargetApi::OPENGL,
-            ShaderModel model = ShaderModel::GL_CORE_41) const noexcept;
+            ShaderModel model = ShaderModel::DESKTOP) const noexcept;
 
     static int glslangVersionFromShaderModel(filament::backend::ShaderModel model);
 
