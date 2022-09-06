@@ -666,7 +666,6 @@ add_subdirectory(${EXTERNAL}/meshoptimizer)
 add_subdirectory(${EXTERNAL}/cgltf/tnt)
 add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/jsmn/tnt)
-add_subdirectory(${EXTERNAL}/stb/tnt)
 add_subdirectory(${EXTERNAL}/getopt)
 
 if (FILAMENT_BUILD_FILAMAT OR IS_HOST_PLATFORM)
