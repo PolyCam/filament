@@ -93,8 +93,7 @@ public:
     void setModelMatrix(const math::mat4f& modelMatrix) noexcept;
 
     // sets the camera's model matrix
-    void lookAt(const math::float3& eye, const math::float3& center,
-            const math::float3& up = { 0, 1, 0 })  noexcept;
+    void lookAt(math::double3 const& eye, math::double3 const& center, math::double3 const& up) noexcept;
 
     // returns the model matrix
     math::mat4 getModelMatrix() const noexcept;
@@ -211,6 +210,7 @@ struct CameraInfo {
     math::mat4f model;              // camera model matrix
     math::mat4f view;               // camera view matrix (inverse(model))
     math::mat4 worldOrigin;         // world origin transform (already applied to model and view)
+    math::float4 clipTransfrom{1,1,0,0}; // clip-space transform, only for VERTEX_DOMAIN_DEVICE
     float zn{};                     // distance (positive) to the near plane
     float zf{};                     // distance (positive) to the far plane
     float ev100{};                  // exposure

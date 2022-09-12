@@ -304,6 +304,7 @@ DECL_DRIVER_API_SYNCHRONOUS_N(void, cancelExternalImage, void*, image)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, getTimerQueryValue, backend::TimerQueryHandle, query, uint64_t*, elapsedTime)
 DECL_DRIVER_API_SYNCHRONOUS_N(backend::SyncStatus, getSyncStatus, backend::SyncHandle, sh)
 DECL_DRIVER_API_SYNCHRONOUS_N(bool, isWorkaroundNeeded, backend::Workaround, workaround)
+DECL_DRIVER_API_SYNCHRONOUS_0(backend::FeatureLevel, getFeatureLevel)
 
 /*
  * Updating driver objects
@@ -335,16 +336,7 @@ DECL_DRIVER_API_N(resetBufferObject,
 
 DECL_DRIVER_API_N(updateSamplerGroup,
         backend::SamplerGroupHandle, ubh,
-        backend::SamplerGroup&&, samplerGroup)
-
-DECL_DRIVER_API_N(update2DImage,
-        backend::TextureHandle, th,
-        uint32_t, level,
-        uint32_t, xoffset,
-        uint32_t, yoffset,
-        uint32_t, width,
-        uint32_t, height,
-        backend::PixelBufferDescriptor&&, data)
+        backend::BufferDescriptor&&, data)
 
 DECL_DRIVER_API_N(setMinMaxLevels,
         backend::TextureHandle, th,
@@ -361,12 +353,6 @@ DECL_DRIVER_API_N(update3DImage,
         uint32_t, height,
         uint32_t, depth,
         backend::PixelBufferDescriptor&&, data)
-
-DECL_DRIVER_API_N(updateCubeImage,
-        backend::TextureHandle, th,
-        uint32_t, level,
-        backend::PixelBufferDescriptor&&, data,
-        backend::FaceOffsets, faceOffsets)
 
 DECL_DRIVER_API_N(generateMipmaps,
         backend::TextureHandle, th)

@@ -44,6 +44,7 @@ FMaterialInstance::FMaterialInstance(FEngine& engine,
           mCulling(other->mCulling),
           mColorWrite(other->mColorWrite),
           mDepthWrite(other->mDepthWrite),
+          mStencilState(other->mStencilState),
           mDepthFunc(other->mDepthFunc),
           mScissorRect(other->mScissorRect),
           mName(name ? CString(name) : other->mName) {
@@ -58,7 +59,7 @@ FMaterialInstance::FMaterialInstance(FEngine& engine,
     }
 
     if (!material->getSamplerInterfaceBlock().isEmpty()) {
-        mSamplers.setSamplers(other->getSamplerGroup());
+        mSamplers = other->getSamplerGroup();
         mSbHandle = driver.createSamplerGroup(mSamplers.getSize());
     }
 
@@ -92,6 +93,11 @@ void FMaterialInstance::initDefaultInstance(FEngine& engine, FMaterial const* ma
     }
 
     const RasterState& rasterState = material->getRasterState();
+    // At the moment, only MaterialInstances have a stencil state, but in the future it should be
+    // possible to set the stencil state directly on a material (through material definitions, or
+    // MaterialBuilder).
+    // TODO: Here is where we'd "inherit" the stencil state from the Material.
+    // mStencilState = material->getStencilState();
 
     // We inherit the resolved culling mode rather than the builder-set culling mode.
     // This preserves the property whereby double-sidedness automatically disables culling.
@@ -133,20 +139,20 @@ void FMaterialInstance::commitSlow(DriverApi& driver) const {
         driver.updateBufferObject(mUbHandle, mUniforms.toBufferDescriptor(driver), 0);
     }
     if (mSamplers.isDirty()) {
-        driver.updateSamplerGroup(mSbHandle, std::move(mSamplers.toCommandStream()));
+        driver.updateSamplerGroup(mSbHandle, mSamplers.toBufferDescriptor(driver));
     }
 }
 
 // ------------------------------------------------------------------------------------------------
 
-void FMaterialInstance::setParameter(const char* name,
+void FMaterialInstance::setParameter(std::string_view name,
         backend::Handle<backend::HwTexture> texture, backend::SamplerParams params) noexcept {
     size_t index = mMaterial->getSamplerInterfaceBlock().getSamplerInfo(name)->offset;
     mSamplers.setSampler(index, { texture, params });
 }
 
-void FMaterialInstance::setParameterImpl(const char* name,
-        Texture const* texture, TextureSampler const& sampler) noexcept {
+void FMaterialInstance::setParameterImpl(std::string_view name,
+        Texture const* texture, TextureSampler const& sampler) {
 
 #ifndef NDEBUG
     // Per GLES3.x specification, depth texture can't be filtered unless in compare mode.
@@ -161,8 +167,8 @@ void FMaterialInstance::setParameterImpl(const char* name,
                 minFilter == SamplerMinFilter::NEAREST_MIPMAP_LINEAR) {
                 PANIC_LOG("Depth textures can't be sampled with a linear filter "
                           "unless the comparison mode is set to COMPARE_TO_TEXTURE. "
-                          "(material: \"%s\", parameter: \"%s\")",
-                          getMaterial()->getName().c_str(), name);
+                          "(material: \"%s\", parameter: \"%.*s\")",
+                          getMaterial()->getName().c_str(), name.size(), name.data());
             }
         }
     }

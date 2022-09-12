@@ -41,9 +41,8 @@ using namespace utils;
 
 io::ostream& operator<<(io::ostream& out, ShaderModel model) {
     switch (model) {
-        CASE(ShaderModel, UNKNOWN)
-        CASE(ShaderModel, GL_ES_30)
-        CASE(ShaderModel, GL_CORE_41)
+        CASE(ShaderModel, MOBILE)
+        CASE(ShaderModel, DESKTOP)
     }
     return out;
 }
@@ -117,6 +116,7 @@ io::ostream& operator<<(io::ostream& out, SamplerType type) {
         CASE(SamplerType, SAMPLER_2D_ARRAY)
         CASE(SamplerType, SAMPLER_3D)
         CASE(SamplerType, SAMPLER_CUBEMAP)
+        CASE(SamplerType, SAMPLER_CUBEMAP_ARRAY)
         CASE(SamplerType, SAMPLER_EXTERNAL)
     }
     return out;
@@ -401,16 +401,6 @@ io::ostream& operator<<(io::ostream& out, const AttributeArray& type) {
     return out << "AttributeArray[" << type.max_size() << "]{}";
 }
 
-io::ostream& operator<<(io::ostream& out, const FaceOffsets& type) {
-    return out << "FaceOffsets{"
-    << type[0] << ", "
-    << type[1] << ", "
-    << type[2] << ", "
-    << type[3] << ", "
-    << type[4] << ", "
-    << type[5] << "}";
-}
-
 io::ostream& operator<<(io::ostream& out, const RasterState& rs) {
     // TODO: implement decoding of enums
     return out << "RasterState{"
@@ -497,13 +487,20 @@ io::ostream& operator<<(io::ostream& out, MRT const& mrt) {
 }
 
 io::ostream& operator<<(io::ostream& stream, ShaderStageFlags stageFlags) {
-    unsigned int v = +stageFlags.vertex + 2u * +stageFlags.fragment;
     const char* str = nullptr;
-    switch (v & 3) {
-        case 0: str = "{ }"; break;
-        case 1: str = "{ vertex }"; break;
-        case 2: str = "{ fragment }"; break;
-        case 3: str = "{ vertex | fragment }"; break;
+    switch (stageFlags) {
+        case ShaderStageFlags::NONE:
+            str = "{ }";
+            break;
+        case ShaderStageFlags::VERTEX:
+            str = "{ vertex }";
+            break;
+        case ShaderStageFlags::FRAGMENT:
+            str = "{ fragment }";
+            break;
+        case ShaderStageFlags::ALL_SHADER_STAGE_FLAGS:
+            str = "{ vertex | fragment }";
+            break;
     }
     return stream << str;
 }

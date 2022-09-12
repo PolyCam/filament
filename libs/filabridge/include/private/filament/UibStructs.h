@@ -22,7 +22,7 @@
 
 #include <private/filament/EngineEnums.h>
 
-#include <utils/CString.h>
+#include <string_view>
 
 /*
  * Here we define all the UBOs known by filament as C structs. It is used by filament to
@@ -33,13 +33,11 @@
 namespace filament {
 
 /*
- * These structures are only used to call offsetof() and make it easy to visualize the UBO.
- *
- * IMPORTANT NOTE: Respect std140 layout, don't update without updating getUib()
+ * IMPORTANT NOTE: Respect std140 layout, don't update without updating UibGenerator::get{*}Uib()
  */
 
 struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "FrameUniforms" };
+    static constexpr std::string_view _name{ "FrameUniforms" };
 
     // --------------------------------------------------------------------------------------------
     // Values that can be accessed in both surface and post-process materials
@@ -51,6 +49,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     math::mat4f viewFromClipMatrix;
     math::mat4f clipFromWorldMatrix;
     math::mat4f worldFromClipMatrix;
+    math::float4 clipTransform;     // [sx, sy, tx, ty] only used by VERTEX_DOMAIN_DEVICE
 
     math::float2 clipControl;       // clip control
     float time;                     // time in seconds, with a 1 second period
@@ -83,7 +82,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     float needsAlphaChannel;
 
     // AO
-    float aoSamplingQualityAndEdgeDistance;     // 0: bilinear, !0: bilateral edge distance
+    float aoSamplingQualityAndEdgeDistance;     // <0: no AO, 0: bilinear, !0: bilateral edge distance
     float aoBentNormals;                        // 0: no AO bent normal, >0.0 AO bent normals
     float aoReserved0;
     float aoReserved1;
@@ -164,7 +163,7 @@ struct PerViewUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     float ssrStride;                    // ssr texel stride, >= 1.0
 
     // bring PerViewUib to 2 KiB
-    math::float4 reserved[48];
+    math::float4 reserved[47];
 };
 
 // 2 KiB == 128 float4s
@@ -210,18 +209,18 @@ static_assert(sizeof(PerRenderableData) == 256,
         "sizeof(PerRenderableData) must be 256 bytes");
 
 struct alignas(256) PerRenderableUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "ObjectUniforms" };
-    PerRenderableData data[64];
+    static constexpr std::string_view _name{ "ObjectUniforms" };
+    PerRenderableData data[CONFIG_MAX_INSTANCES];
 };
 // PerRenderableUib must have an alignment of 256 to be compatible with all versions of GLES.
-static_assert(sizeof(PerRenderableUib) <= 16384,
+static_assert(sizeof(PerRenderableUib) <= CONFIG_MINSPEC_UBO_SIZE,
         "PerRenderableUib exceeds max UBO size");
 
 // ------------------------------------------------------------------------------------------------
 // MARK: -
 
 struct LightsUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "LightsUniforms" };
+    static constexpr std::string_view _name{ "LightsUniforms" };
     math::float4 positionFalloff;     // { float3(pos), 1/falloff^2 }
     math::float3 direction;           // dir
     float reserved1;                  // 0
@@ -247,7 +246,7 @@ static_assert(sizeof(LightsUib) == 64,
 
 // UBO for punctual (spot light) shadows.
 struct ShadowUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "ShadowUniforms" };
+    static constexpr std::string_view _name{ "ShadowUniforms" };
     struct alignas(16) ShadowData {
         math::mat4f lightFromWorldMatrix;
         math::float3 direction;
@@ -260,7 +259,7 @@ struct ShadowUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     };
     ShadowData shadows[CONFIG_MAX_SHADOW_CASTING_SPOTS];
 };
-static_assert(sizeof(ShadowUib) <= 16384,
+static_assert(sizeof(ShadowUib) <= CONFIG_MINSPEC_UBO_SIZE,
         "ShadowUib exceeds max UBO size");
 
 // ------------------------------------------------------------------------------------------------
@@ -268,7 +267,7 @@ static_assert(sizeof(ShadowUib) <= 16384,
 
 // UBO froxel record buffer.
 struct FroxelRecordUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "FroxelRecordUniforms" };
+    static constexpr std::string_view _name{ "FroxelRecordUniforms" };
     math::uint4 records[1024];
 };
 static_assert(sizeof(FroxelRecordUib) == 16384,
@@ -279,7 +278,7 @@ static_assert(sizeof(FroxelRecordUib) == 16384,
 
 // This is not the UBO proper, but just an element of a bone array.
 struct PerRenderableBoneUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
-    static constexpr utils::StaticString _name{ "BonesUniforms" };
+    static constexpr std::string_view _name{ "BonesUniforms" };
     struct alignas(16) BoneData {
         // bone transform, last row assumed [0,0,0,1]
         math::float4 transform[3];
@@ -288,19 +287,21 @@ struct PerRenderableBoneUib { // NOLINT(cppcoreguidelines-pro-type-member-init)
     };
     BoneData bones[CONFIG_MAX_BONE_COUNT];
 };
-static_assert(sizeof(PerRenderableBoneUib) <= 16384,
-        "PerRenderableUibBone exceed max UBO size");
+
+static_assert(sizeof(PerRenderableBoneUib) <= CONFIG_MINSPEC_UBO_SIZE,
+        "PerRenderableUibBone exceeds max UBO size");
 
 // ------------------------------------------------------------------------------------------------
 // MARK: -
 
 struct alignas(16) PerRenderableMorphingUib {
-    static constexpr utils::StaticString _name{ "MorphingUniforms" };
+    static constexpr std::string_view _name{ "MorphingUniforms" };
     // The array stride(the bytes between array elements) is always rounded up to the size of a vec4 in std140.
     math::float4 weights[CONFIG_MAX_MORPH_TARGET_COUNT];
 };
-static_assert(sizeof(PerRenderableMorphingUib) <= 16384,
-        "PerRenderableMorphingUib exceed max UBO size");
+
+static_assert(sizeof(PerRenderableMorphingUib) <= CONFIG_MINSPEC_UBO_SIZE,
+        "PerRenderableMorphingUib exceeds max UBO size");
 
 } // namespace filament
 

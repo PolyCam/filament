@@ -40,24 +40,26 @@
 namespace filament {
 namespace backend {
 
-Driver* MetalDriverFactory::create(MetalPlatform* const platform) {
-    return MetalDriver::create(platform);
+Driver* MetalDriverFactory::create(MetalPlatform* const platform, const Platform::DriverConfig& driverConfig) {
+    return MetalDriver::create(platform, driverConfig);
 }
 
 UTILS_NOINLINE
-Driver* MetalDriver::create(MetalPlatform* const platform) {
+Driver* MetalDriver::create(MetalPlatform* const platform, const Platform::DriverConfig& driverConfig) {
     assert_invariant(platform);
-    return new MetalDriver(platform);
+    size_t defaultSize = FILAMENT_METAL_HANDLE_ARENA_SIZE_IN_MB * 1024U * 1024U;
+    Platform::DriverConfig validConfig { .handleArenaSize = std::max(driverConfig.handleArenaSize, defaultSize) };
+    return new MetalDriver(platform, validConfig);
 }
 
 Dispatcher MetalDriver::getDispatcher() const noexcept {
     return ConcreteDispatcher<MetalDriver>::make();
 }
 
-MetalDriver::MetalDriver(MetalPlatform* platform) noexcept
+MetalDriver::MetalDriver(MetalPlatform* platform, const Platform::DriverConfig& driverConfig) noexcept
         : mPlatform(*platform),
           mContext(new MetalContext),
-          mHandleAllocator("Handles", FILAMENT_METAL_HANDLE_ARENA_SIZE_IN_MB * 1024U * 1024U) {
+          mHandleAllocator("Handles", driverConfig.handleArenaSize) {
     mContext->driver = this;
 
     mContext->device = mPlatform.createDevice();
@@ -301,13 +303,12 @@ void MetalDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
 
     MetalRenderTarget::Attachment colorAttachments[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT] = {{}};
     for (size_t i = 0; i < MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT; i++) {
-        const auto& buffer = color[i];
-        if (!buffer.handle) {
-            ASSERT_POSTCONDITION(none(targetBufferFlags & getTargetBufferFlagsAt(i)),
-                    "The COLOR%u flag was specified, but no color texture provided.", i);
+        if (none(targetBufferFlags & getTargetBufferFlagsAt(i))) {
             continue;
         }
-
+        const auto& buffer = color[i];
+        ASSERT_PRECONDITION(buffer.handle,
+                "The COLOR%u flag was specified, but invalid color handle provided.", i);
         auto colorTexture = handle_cast<MetalTexture>(buffer.handle);
         ASSERT_PRECONDITION(colorTexture->texture,
                 "Color texture passed to render target has no texture allocation");
@@ -316,23 +317,29 @@ void MetalDriver::createRenderTargetR(Handle<HwRenderTarget> rth,
     }
 
     MetalRenderTarget::Attachment depthAttachment = {};
-    if (depth.handle) {
+    if (any(targetBufferFlags & TargetBufferFlags::DEPTH)) {
+        ASSERT_PRECONDITION(depth.handle,
+                "The DEPTH flag was specified, but invalid depth handle provided.");
         auto depthTexture = handle_cast<MetalTexture>(depth.handle);
         ASSERT_PRECONDITION(depthTexture->texture,
                 "Depth texture passed to render target has no texture allocation.");
         depthTexture->updateLodRange(depth.level);
         depthAttachment = { depthTexture, depth.level, depth.layer };
     }
-    ASSERT_POSTCONDITION(!depth.handle || any(targetBufferFlags & TargetBufferFlags::DEPTH),
-            "The DEPTH flag was specified, but no depth texture provided.");
+
+    MetalRenderTarget::Attachment stencilAttachment = {};
+    if (any(targetBufferFlags & TargetBufferFlags::STENCIL)) {
+        ASSERT_PRECONDITION(stencil.handle,
+                "The STENCIL flag was specified, but invalid stencil handle provided.");
+        auto stencilTexture = handle_cast<MetalTexture>(stencil.handle);
+        ASSERT_PRECONDITION(stencilTexture->texture,
+                "Stencil texture passed to render target has no texture allocation.");
+        stencilTexture->updateLodRange(stencil.level);
+        stencilAttachment = { stencilTexture, stencil.level, stencil.layer };
+    }
 
     construct_handle<MetalRenderTarget>(rth, mContext, width, height, samples,
-            colorAttachments, depthAttachment);
-
-    ASSERT_POSTCONDITION(
-            !stencil.handle &&
-            !(targetBufferFlags & TargetBufferFlags::STENCIL),
-            "Stencil buffer not supported.");
+            colorAttachments, depthAttachment, stencilAttachment);
 }
 
 void MetalDriver::createFenceR(Handle<HwFence> fh, int dummy) {
@@ -493,9 +500,9 @@ void MetalDriver::destroyTexture(Handle<HwTexture> th) {
 
     // Unbind this texture from any sampler groups that currently reference it.
     for (auto* metalSamplerGroup : mContext->samplerGroups) {
-        const SamplerGroup::Sampler* samplers = metalSamplerGroup->sb->getSamplers();
+        const SamplerDescriptor* samplers = metalSamplerGroup->sb->data();
         for (size_t i = 0; i < metalSamplerGroup->sb->getSize(); i++) {
-            const SamplerGroup::Sampler* sampler = samplers + i;
+            const SamplerDescriptor* sampler = samplers + i;
             if (sampler->t == th) {
                 metalSamplerGroup->sb->setSampler(i, {{}, {}});
             }
@@ -548,9 +555,9 @@ void MetalDriver::terminate() {
 
 ShaderModel MetalDriver::getShaderModel() const noexcept {
 #if defined(IOS)
-    return ShaderModel::GL_ES_30;
+    return ShaderModel::MOBILE;
 #else
-    return ShaderModel::GL_CORE_41;
+    return ShaderModel::DESKTOP;
 #endif
 }
 
@@ -675,8 +682,17 @@ bool MetalDriver::isWorkaroundNeeded(Workaround workaround) {
             return false;
         case Workaround::ALLOW_READ_ONLY_ANCILLARY_FEEDBACK_LOOP:
             return true;
+        case Workaround::ADRENO_UNIFORM_ARRAY_CRASH:
+            return false;
     }
     return false;
+}
+
+FeatureLevel MetalDriver::getFeatureLevel() {
+    // TODO: before we can return FEATURE_LEVEL_2 we need to decouple the samplers from
+    //       the textures. Metal only supports 16 samplers, but at least 31 textures on all
+    //       hardware.
+    return FeatureLevel::FEATURE_LEVEL_1;
 }
 
 math::float2 MetalDriver::getClipSpaceParams() {
@@ -699,6 +715,8 @@ void MetalDriver::updateIndexBuffer(Handle<HwIndexBuffer> ibh, BufferDescriptor&
 
 void MetalDriver::updateBufferObject(Handle<HwBufferObject> boh, BufferDescriptor&& data,
         uint32_t byteOffset) {
+    ASSERT_PRECONDITION(!isInRenderPass(mContext),
+            "updateBufferObject must be called outside of a render pass.");
     auto* bo = handle_cast<MetalBufferObject>(boh);
     bo->updateBuffer(data.buffer, data.size, byteOffset);
     scheduleDestroy(std::move(data));
@@ -728,15 +746,6 @@ void MetalDriver::setVertexBufferObject(Handle<HwVertexBuffer> vbh, uint32_t ind
     vertexBuffer->buffers[index] = bufferObject->getBuffer();
 }
 
-void MetalDriver::update2DImage(Handle<HwTexture> th, uint32_t level, uint32_t xoffset,
-        uint32_t yoffset, uint32_t width, uint32_t height, PixelBufferDescriptor&& data) {
-    ASSERT_PRECONDITION(!isInRenderPass(mContext),
-            "update2DImage must be called outside of a render pass.");
-    auto tex = handle_cast<MetalTexture>(th);
-    tex->loadImage(level, MTLRegionMake2D(xoffset, yoffset, width, height), data);
-    scheduleDestroy(std::move(data));
-}
-
 void MetalDriver::setMinMaxLevels(Handle<HwTexture> th, uint32_t minLevel, uint32_t maxLevel) {
 }
 
@@ -748,15 +757,6 @@ void MetalDriver::update3DImage(Handle<HwTexture> th, uint32_t level,
             "update3DImage must be called outside of a render pass.");
     auto tex = handle_cast<MetalTexture>(th);
     tex->loadImage(level, MTLRegionMake3D(xoffset, yoffset, zoffset, width, height, depth), data);
-    scheduleDestroy(std::move(data));
-}
-
-void MetalDriver::updateCubeImage(Handle<HwTexture> th, uint32_t level,
-        PixelBufferDescriptor&& data, FaceOffsets faceOffsets) {
-    ASSERT_PRECONDITION(!isInRenderPass(mContext),
-            "updateCubeImage must be called outside of a render pass.");
-    auto tex = handle_cast<MetalTexture>(th);
-    tex->loadCubeImage(faceOffsets, level, data);
     scheduleDestroy(std::move(data));
 }
 
@@ -819,9 +819,19 @@ bool MetalDriver::canGenerateMipmaps() {
 }
 
 void MetalDriver::updateSamplerGroup(Handle<HwSamplerGroup> sbh,
-        SamplerGroup&& samplerGroup) {
+        BufferDescriptor&& data) {
     auto sb = handle_cast<MetalSamplerGroup>(sbh);
-    *sb->sb = samplerGroup;
+
+    // FIXME: we shouldn't be using SamplerGroup here, instead the backend should create
+    //        a descriptor or any internal data-structure that represents the textures/samplers.
+    //        It's preferable to do as much work as possible here.
+    //        Here, we emulate the older backend API by re-creating a SamplerGroup from the
+    //        passed data.
+    SamplerGroup samplerGroup(data.size / sizeof(SamplerDescriptor));
+    memcpy(samplerGroup.data(), data.buffer, data.size);
+    *sb->sb = std::move(samplerGroup);
+
+    scheduleDestroy(std::move(data));
 }
 
 void MetalDriver::beginRenderPass(Handle<HwRenderTarget> rth,
@@ -841,17 +851,11 @@ void MetalDriver::beginRenderPass(Handle<HwRenderTarget> rth,
                                    encoding:NSUTF8StringEncoding];
     }
 
-    MTLRegion mvp = renderTarget->getRegionFromClientRect(params.viewport);
-    MTLViewport metalViewport {
-        .originX = static_cast<double>(mvp.origin.x),
-        .originY = static_cast<double>(mvp.origin.y),
-        .width = static_cast<double>(mvp.size.width),
-        .height = static_cast<double>(mvp.size.height),
-        .znear = static_cast<double>(params.depthRange.near),
-        .zfar = static_cast<double>(params.depthRange.far)
-    };
+    MTLViewport metalViewport =
+            renderTarget->getViewportFromClientViewport(params.viewport,
+                    params.depthRange.near,
+                    params.depthRange.far);
     [mContext->currentRenderPassEncoder setViewport:metalViewport];
-
     mContext->currentViewport = metalViewport;
 
     // Metal requires a new command encoder for each render pass, and they cannot be reused.
@@ -911,6 +915,7 @@ void MetalDriver::commit(Handle<HwSwapChain> sch) {
 }
 
 void MetalDriver::bindUniformBuffer(uint32_t index, Handle<HwBufferObject> boh) {
+    assert_invariant(index < UNIFORM_BUFFER_COUNT);
     auto* bo = handle_cast<MetalBufferObject>(boh);
     auto* currentBo = mContext->uniformState[index].buffer;
     if (currentBo) {
@@ -926,6 +931,7 @@ void MetalDriver::bindUniformBuffer(uint32_t index, Handle<HwBufferObject> boh) 
 
 void MetalDriver::bindUniformBufferRange(uint32_t index, Handle<HwBufferObject> boh,
         uint32_t offset, uint32_t size) {
+    assert_invariant(index < UNIFORM_BUFFER_COUNT);
     auto* bo = handle_cast<MetalBufferObject>(boh);
     auto* currentBo = mContext->uniformState[index].buffer;
     if (currentBo) {
@@ -958,6 +964,9 @@ void MetalDriver::popGroupMarker(int) {
 }
 
 void MetalDriver::startCapture(int) {
+    // Submit any pending command buffers. Metal will only capture command buffers created and
+    // submitted during the capture period.
+    submitPendingCommands(mContext);
     if (@available(iOS 13, *)) {
         MTLCaptureDescriptor* descriptor = [MTLCaptureDescriptor new];
         descriptor.captureObject = mContext->device;
@@ -979,6 +988,9 @@ void MetalDriver::startCapture(int) {
 }
 
 void MetalDriver::stopCapture(int) {
+    // Submit any pending command buffers. Metal will only capture command buffers created and
+    // submitted during the capture period.
+    submitPendingCommands(mContext);
     [[MTLCaptureManager sharedCaptureManager] stopCapture];
 }
 
@@ -1169,6 +1181,12 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
     if (depthAttachment) {
         depthPixelFormat = depthAttachment.getPixelFormat();
     }
+    MTLPixelFormat stencilPixelFormat = MTLPixelFormatInvalid;
+    const auto& stencilAttachment = mContext->currentRenderTarget->getStencilAttachment();
+    if (stencilAttachment) {
+        stencilPixelFormat = stencilAttachment.getPixelFormat();
+        assert_invariant(isMetalFormatStencil(stencilPixelFormat));
+    }
     MetalPipelineState pipelineState {
         .vertexFunction = program->vertexFunction,
         .fragmentFunction = program->fragmentFunction,
@@ -1184,6 +1202,7 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
             colorPixelFormat[7]
         },
         .depthAttachmentPixelFormat = depthPixelFormat,
+        .stencilAttachmentPixelFormat = stencilPixelFormat,
         .sampleCount = mContext->currentRenderTarget->getSamples(),
         .blendState = BlendState {
             .blendingEnabled = rs.hasBlending(),
@@ -1221,8 +1240,33 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
     // Set the depth-stencil state, if a state change is needed.
     DepthStencilState depthState;
     if (depthAttachment) {
-        depthState.compareFunction = getMetalCompareFunction(rs.depthFunc);
+        depthState.depthCompare = getMetalCompareFunction(rs.depthFunc);
         depthState.depthWriteEnabled = rs.depthWrite;
+    }
+    if (stencilAttachment) {
+        const auto& ss = ps.stencilState;
+
+        auto& front = depthState.front;
+        front.stencilCompare = getMetalCompareFunction(ss.front.stencilFunc);
+        front.stencilOperationStencilFail = getMetalStencilOperation(ss.front.stencilOpStencilFail);
+        front.stencilOperationDepthFail = getMetalStencilOperation(ss.front.stencilOpDepthFail);
+        front.stencilOperationDepthStencilPass =
+                getMetalStencilOperation(ss.front.stencilOpDepthStencilPass);
+        front.readMask = ss.front.readMask;
+        front.writeMask = ss.front.writeMask;
+
+        auto& back = depthState.back;
+        back.stencilCompare = getMetalCompareFunction(ss.back.stencilFunc);
+        back.stencilOperationStencilFail = getMetalStencilOperation(ss.back.stencilOpStencilFail);
+        back.stencilOperationDepthFail = getMetalStencilOperation(ss.back.stencilOpDepthFail);
+        back.stencilOperationDepthStencilPass =
+                getMetalStencilOperation(ss.back.stencilOpDepthStencilPass);
+        back.readMask = ss.back.readMask;
+        back.writeMask = ss.back.writeMask;
+
+        depthState.stencilWriteEnabled = ss.stencilWrite;
+        [mContext->currentRenderPassEncoder setStencilFrontReferenceValue:ss.front.ref
+                                                       backReferenceValue:ss.back.ref];
     }
     mContext->depthStencilState.updateState(depthState);
     if (mContext->depthStencilState.stateChanged()) {
@@ -1239,27 +1283,44 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
     }
 
     // Set scissor-rectangle.
+    // In order to do this, we compute the intersection between:
+    //  1. the scissor rectangle
+    //  2. the current viewport
+    //  3. the render target attachment dimensions (important, as the scissor can't be set larger)
+    // fmax/min are used below to guard against NaN and because the MTLViewport/MTLRegion
+    // coordinates are doubles.
     MTLRegion scissor = mContext->currentRenderTarget->getRegionFromClientRect(ps.scissor);
-    const MTLViewport& viewport = mContext->currentViewport;
+    const float sleft = scissor.origin.x, sright = scissor.origin.x + scissor.size.width;
+    const float stop = scissor.origin.y, sbottom = scissor.origin.y + scissor.size.height;
 
-    // fmax/min are used here to guard against NaN and because the MTLViewport coordinates are doubles.
-    const auto left   = std::fmax(viewport.originX                  , scissor.origin.x   );
-    const auto right  = std::fmin(viewport.originX + viewport.width , scissor.origin.x + scissor.size.width );
-    const auto top    = std::fmax(viewport.originY                  , scissor.origin.y );
-    const auto bottom = std::fmin(viewport.originY + viewport.height, scissor.origin.y + scissor.size.height );
+    // Viewport extent
+    const MTLViewport& viewport = mContext->currentViewport;
+    const float vleft = viewport.originX, vright = viewport.originX + viewport.width;
+    const float vtop = viewport.originY, vbottom = viewport.originY + viewport.height;
+
+    // Attachment extent
+    const auto attachmentSize = mContext->currentRenderTarget->getAttachmentSize();
+    const float aleft = 0.0f, atop = 0.0f;
+    const float aright = static_cast<float>(attachmentSize.x);
+    const float abottom = static_cast<float>(attachmentSize.y);
+
+    const auto left   = std::fmax(std::fmax(sleft, vleft), aleft);
+    const auto right  = std::fmin(std::fmin(sright, vright), aright);
+    const auto top    = std::fmax(std::fmax(stop, vtop), atop);
+    const auto bottom = std::fmin(std::fmin(sbottom, vbottom), abottom);
 
     MTLScissorRect scissorRect = {
         .x      = static_cast<NSUInteger>(left),
-        .y      = static_cast<NSUInteger>(top ),
+        .y      = static_cast<NSUInteger>(top),
         .width  = static_cast<NSUInteger>(right  - left),
-        .height = static_cast<NSUInteger>(bottom - top )
+        .height = static_cast<NSUInteger>(bottom - top)
     };
 
     [mContext->currentRenderPassEncoder setScissorRect:scissorRect];
 
     // Bind uniform buffers.
-    MetalBuffer* uniformsToBind[Program::BINDING_COUNT] = { nil };
-    NSUInteger offsets[Program::BINDING_COUNT] = { 0 };
+    MetalBuffer* uniformsToBind[Program::UNIFORM_BINDING_COUNT] = { nil };
+    NSUInteger offsets[Program::UNIFORM_BINDING_COUNT] = { 0 };
 
     enumerateBoundUniformBuffers([&uniformsToBind, &offsets](const UniformBufferState& state,
             MetalBuffer* buffer, uint32_t index) {
@@ -1267,13 +1328,13 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
         offsets[index] = state.offset;
     });
     MetalBuffer::bindBuffers(getPendingCommandBuffer(mContext), mContext->currentRenderPassEncoder,
-            0, MetalBuffer::Stage::VERTEX | MetalBuffer::Stage::FRAGMENT, uniformsToBind, offsets,
-            Program::BINDING_COUNT);
+            UNIFORM_BUFFER_BINDING_START, MetalBuffer::Stage::VERTEX | MetalBuffer::Stage::FRAGMENT,
+            uniformsToBind, offsets, Program::UNIFORM_BINDING_COUNT);
 
     // Enumerate all the sampler buffers for the program and check which textures and samplers need
     // to be bound.
 
-    auto getTextureToBind = [this](const SamplerGroup::Sampler* sampler) {
+    auto getTextureToBind = [this](const SamplerDescriptor* sampler) {
         const auto metalTexture = handle_const_cast<MetalTexture>(sampler->t);
         id<MTLTexture> textureToBind = metalTexture->swizzledTextureView ? metalTexture->swizzledTextureView
                                                                          : metalTexture->texture;
@@ -1283,7 +1344,7 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
         return textureToBind;
     };
 
-    auto getSamplerToBind = [this](const SamplerGroup::Sampler* sampler) {
+    auto getSamplerToBind = [this](const SamplerDescriptor* sampler) {
         const auto metalTexture = handle_const_cast<MetalTexture>(sampler->t);
         SamplerState s {
             .samplerParams = sampler->s,
@@ -1298,7 +1359,7 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
 
     enumerateSamplerGroups(program, ShaderType::VERTEX,
             [this, &getTextureToBind, &getSamplerToBind, &texturesToBindVertex, &samplersToBindVertex](
-                    const SamplerGroup::Sampler* sampler, uint8_t binding) {
+                    const SamplerDescriptor* sampler, uint8_t binding) {
         // We currently only support a max of MAX_VERTEX_SAMPLER_COUNT samplers. Ignore any additional
         // samplers that may be bound.
         if (binding >= MAX_VERTEX_SAMPLER_COUNT) {
@@ -1336,7 +1397,7 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
 
     enumerateSamplerGroups(program, ShaderType::FRAGMENT,
             [this, &getTextureToBind, &getSamplerToBind, &texturesToBindFragment, &samplersToBindFragment](
-                    const SamplerGroup::Sampler* sampler, uint8_t binding) {
+                    const SamplerDescriptor* sampler, uint8_t binding) {
         // We currently only support a max of MAX_FRAGMENT_SAMPLER_COUNT samplers. Ignore any additional
         // samplers that may be bound.
         if (binding >= MAX_FRAGMENT_SAMPLER_COUNT) {
@@ -1369,10 +1430,10 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
     [mContext->currentRenderPassEncoder setFragmentSamplerStates:samplersToBindFragment
                                                        withRange:fragmentSamplerRange];
 
-    // Bind the vertex buffers.
+    // Bind the user vertex buffers.
 
-    MetalBuffer* buffers[MAX_VERTEX_BUFFER_COUNT];
-    size_t vertexBufferOffsets[MAX_VERTEX_BUFFER_COUNT];
+    MetalBuffer* buffers[MAX_VERTEX_BUFFER_COUNT] = {};
+    size_t vertexBufferOffsets[MAX_VERTEX_BUFFER_COUNT] = {};
     size_t bufferIndex = 0;
 
     auto vb = primitive->vertexBuffer;
@@ -1390,14 +1451,14 @@ void MetalDriver::draw(PipelineState ps, Handle<HwRenderPrimitive> rph, uint32_t
 
     const auto bufferCount = bufferIndex;
     MetalBuffer::bindBuffers(getPendingCommandBuffer(mContext), mContext->currentRenderPassEncoder,
-            VERTEX_BUFFER_START, MetalBuffer::Stage::VERTEX, buffers,
+            USER_VERTEX_BUFFER_BINDING_START, MetalBuffer::Stage::VERTEX, buffers,
             vertexBufferOffsets, bufferCount);
 
     // Bind the zero buffer, used for missing vertex attributes.
     static const char bytes[16] = { 0 };
     [mContext->currentRenderPassEncoder setVertexBytes:bytes
                                                 length:16
-                                               atIndex:(VERTEX_BUFFER_START + ZERO_VERTEX_BUFFER)];
+                                               atIndex:ZERO_VERTEX_BUFFER_BINDING];
 
     MetalIndexBuffer* indexBuffer = primitive->indexBuffer;
 
@@ -1427,7 +1488,7 @@ void MetalDriver::endTimerQuery(Handle<HwTimerQuery> tqh) {
 
 void MetalDriver::enumerateSamplerGroups(
         const MetalProgram* program, ShaderType shaderType,
-        const std::function<void(const SamplerGroup::Sampler*, size_t)>& f) {
+        const std::function<void(const SamplerDescriptor*, size_t)>& f) {
     auto& samplerBlockInfo = (shaderType == ShaderType::VERTEX) ?
             program->vertexSamplerBlockInfo : program->fragmentSamplerBlockInfo;
     auto maxSamplerCount = (shaderType == ShaderType::VERTEX) ?
@@ -1446,7 +1507,7 @@ void MetalDriver::enumerateSamplerGroups(
         }
 
         SamplerGroup* sb = metalSamplerGroup->sb.get();
-        const SamplerGroup::Sampler* boundSampler = sb->getSamplers() + blockInfo.sampler;
+        const SamplerDescriptor* boundSampler = sb->data() + blockInfo.sampler;
 
         if (!boundSampler->t) {
             continue;
@@ -1458,7 +1519,7 @@ void MetalDriver::enumerateSamplerGroups(
 
 void MetalDriver::enumerateBoundUniformBuffers(
         const std::function<void(const UniformBufferState&, MetalBuffer*, uint32_t)>& f) {
-    for (uint32_t i = 0; i < Program::BINDING_COUNT; i++) {
+    for (uint32_t i = 0; i < Program::UNIFORM_BINDING_COUNT; i++) {
         auto& thisUniform = mContext->uniformState[i];
         if (!thisUniform.bound) {
             continue;

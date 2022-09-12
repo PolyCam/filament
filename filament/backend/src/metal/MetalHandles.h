@@ -29,9 +29,13 @@
 #include "MetalExternalImage.h"
 #include "MetalState.h" // for MetalState::VertexDescription
 
+#include "private/backend/SamplerGroup.h"
+
 #include <utils/bitset.h>
 #include <utils/FixedCapacityVector.h>
 #include <utils/Panic.h>
+
+#include <math/vec2.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -121,7 +125,7 @@ public:
     MetalBuffer* getBuffer() { return &buffer; }
 
     // Tracks which uniform buffers this buffer object is bound into.
-    static_assert(Program::BINDING_COUNT <= 32);
+    static_assert(Program::UNIFORM_BINDING_COUNT <= 32);
     utils::bitset32 boundUniformBuffers;
 
 private:
@@ -198,12 +202,11 @@ struct MetalTexture : public HwTexture {
     ~MetalTexture();
 
     void loadImage(uint32_t level, MTLRegion region, PixelBufferDescriptor& p) noexcept;
-    void loadCubeImage(const FaceOffsets& faceOffsets, int miplevel, PixelBufferDescriptor& p);
     void loadSlice(uint32_t level, MTLRegion region, uint32_t byteOffset, uint32_t slice,
-            PixelBufferDescriptor& data) noexcept;
-    void loadWithCopyBuffer(uint32_t level, uint32_t slice, MTLRegion region, PixelBufferDescriptor& data,
+            PixelBufferDescriptor const& data) noexcept;
+    void loadWithCopyBuffer(uint32_t level, uint32_t slice, MTLRegion region, PixelBufferDescriptor const& data,
             const PixelBufferShape& shape);
-    void loadWithBlit(uint32_t level, uint32_t slice, MTLRegion region, PixelBufferDescriptor& data,
+    void loadWithBlit(uint32_t level, uint32_t slice, MTLRegion region, PixelBufferDescriptor const& data,
             const PixelBufferShape& shape);
     void updateLodRange(uint32_t level);
 
@@ -229,7 +232,9 @@ struct MetalTexture : public HwTexture {
 };
 
 struct MetalSamplerGroup : public HwSamplerGroup {
-    explicit MetalSamplerGroup(size_t size) : HwSamplerGroup(size) {}
+    // NOTE: we have to use out-of-line allocation here because the size of a Handle<> is limited
+    std::unique_ptr<SamplerGroup> sb; // FIXME: this shouldn't depend on filament::SamplerGroup
+    explicit MetalSamplerGroup(size_t size) noexcept : sb(new SamplerGroup(size)) { }
 };
 
 class MetalRenderTarget : public HwRenderTarget {
@@ -278,14 +283,28 @@ public:
     };
 
     MetalRenderTarget(MetalContext* context, uint32_t width, uint32_t height, uint8_t samples,
-            Attachment colorAttachments[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT], Attachment depthAttachment);
+            Attachment colorAttachments[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT],
+            Attachment depthAttachment, Attachment stencilAttachment);
     explicit MetalRenderTarget(MetalContext* context)
             : HwRenderTarget(0, 0), context(context), defaultRenderTarget(true) {}
 
     void setUpRenderPassAttachments(MTLRenderPassDescriptor* descriptor, const RenderPassParams& params);
 
+    MTLViewport getViewportFromClientViewport(
+            Viewport rect, float depthRangeNear, float depthRangeFar) {
+        const int32_t height = int32_t(getAttachmentSize().y);
+        assert_invariant(height > 0);
+
+        // Metal's viewport coordinates have (0, 0) at the top-left, but Filament's have (0, 0) at
+        // bottom-left.
+        return {double(rect.left),
+                double(height - rect.bottom - int32_t(rect.height)),
+                double(rect.width), double(rect.height),
+                double(depthRangeNear), double(depthRangeFar)};
+    }
+
     MTLRegion getRegionFromClientRect(Viewport rect) {
-        const uint32_t height = getAttachmentHeight();
+        const uint32_t height = getAttachmentSize().y;
         assert_invariant(height > 0);
 
         // Convert the Filament rect into Metal texture coordinates, taking into account Metal's
@@ -297,12 +316,15 @@ public:
                 rect.width, rect.height);
     }
 
+    math::uint2 getAttachmentSize() noexcept;
+
     bool isDefaultRenderTarget() const { return defaultRenderTarget; }
     uint8_t getSamples() const { return samples; }
 
     Attachment getDrawColorAttachment(size_t index);
     Attachment getReadColorAttachment(size_t index);
     Attachment getDepthAttachment();
+    Attachment getStencilAttachment();
 
 private:
 
@@ -311,15 +333,14 @@ private:
     static id<MTLTexture> createMultisampledTexture(id<MTLDevice> device, MTLPixelFormat format,
             uint32_t width, uint32_t height, uint8_t samples);
 
-    uint32_t getAttachmentHeight() noexcept;
-
     MetalContext* context;
     bool defaultRenderTarget = false;
     uint8_t samples = 1;
 
     Attachment color[MRT::MAX_SUPPORTED_RENDER_TARGET_COUNT] = {};
     Attachment depth = {};
-    uint32_t attachmentHeight = 0;
+    Attachment stencil = {};
+    math::uint2 attachmentSize = {};
 };
 
 // MetalFence is used to implement both Fences and Syncs.

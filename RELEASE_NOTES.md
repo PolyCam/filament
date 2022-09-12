@@ -5,6 +5,29 @@ A new header is inserted each time a *tag* is created.
 
 ## main branch
 
+## v1.25.6
+
+- engine: Add `CONFIG_MINSPEC_UBO_SIZE` as a nicer way to allow exceeding the ES3.0 minspec.
+- gltfio: minor efficiency improvement for Android and WebGL builds.
+- gltfio: add support for concurrent texture downloading and decoding.
+
+## v1.25.5
+
+- WebGL: upgraded the JS bindings to work with emsdk 3.1.15
+- WebGL: added missing IBL builder to TypeScript annotations
+- engine: Fix incorrect precision restoration when computing accurate world translations
+- engine: make `MaterialInstance` public API friendly to `std::string_view` parameters
+- gltfio: add 'detach' methods to allow ownership transfer of entities and components
+
+## v1.25.4
+
+- backend: streamline texture upload APIs [⚠️ **API Change**]
+
+## v1.25.3
+
+- engine: Fix Adreno gpu crash introduced by gpu morph target change
+- engine: Add optional memory configuration parameters to Engine initialization
+
 ## v1.25.2
 
 - engine: `Camera::getNear()` and `Camera::getCullingFar()` now return `doubles`

@@ -80,7 +80,7 @@ void PlatformEGL::clearGlError() noexcept {
 
 PlatformEGL::PlatformEGL() noexcept = default;
 
-Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
+Driver* PlatformEGL::createDriver(void* sharedContext, const Platform::DriverConfig& driverConfig) noexcept {
     mEGLDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     assert_invariant(mEGLDisplay != EGL_NO_DISPLAY);
 
@@ -91,7 +91,11 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
         return nullptr;
     }
 
+#if defined(__ANDROID__) || defined(FILAMENT_USE_EXTERNAL_GLES3) || defined(__EMSCRIPTEN__)
+    // PlatofrmEGL is used with and without GLES, but this function is only
+    // meaningful when GLES is used.
     importGLESExtensionsEntryPoints();
+#endif
 
     auto extensions = GLUtils::split(eglQueryString(mEGLDisplay, EGL_EXTENSIONS));
 
@@ -219,7 +223,7 @@ Driver* PlatformEGL::createDriver(void* sharedContext) noexcept {
     clearGlError();
 
     // success!!
-    return OpenGLDriverFactory::create(this, sharedContext);
+    return OpenGLDriverFactory::create(this, sharedContext, driverConfig);
 
 error:
     // if we're here, we've failed

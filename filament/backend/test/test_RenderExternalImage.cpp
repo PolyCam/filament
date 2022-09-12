@@ -19,6 +19,8 @@
 #include "ShaderGenerator.h"
 #include "TrianglePrimitive.h"
 
+#include "private/backend/SamplerGroup.h"
+
 #include <CoreVideo/CoreVideo.h>
 
 namespace {
@@ -66,9 +68,9 @@ TEST_F(BackendTest, RenderExternalImageWithoutSet) {
     ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
 
     // Create a program that samples a texture.
-    Program p = shaderGen.getProgram();
+    Program p = shaderGen.getProgram(getDriverApi());
     Program::Sampler sampler { utils::CString("tex"), 6 };
-    p.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, &sampler, 1);
+    p.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, &sampler, 1);
     backend::Handle<HwProgram> program = getDriverApi().createProgram(std::move(p));
 
     backend::Handle<HwRenderTarget> defaultRenderTarget = getDriverApi().createDefaultRenderTarget(0);
@@ -104,10 +106,10 @@ TEST_F(BackendTest, RenderExternalImageWithoutSet) {
     getDriverApi().makeCurrent(swapChain, swapChain);
     getDriverApi().beginFrame(0, 0);
 
-    SamplerGroup mSamplers(1);
-    mSamplers.setSampler(0, { texture, {} });
+    SamplerGroup samplers(1);
+    samplers.setSampler(0, { texture, {} });
     backend::Handle<HwSamplerGroup> samplerGroup = getDriverApi().createSamplerGroup(1);
-    getDriverApi().updateSamplerGroup(samplerGroup, std::move(mSamplers.toCommandStream()));
+    getDriverApi().updateSamplerGroup(samplerGroup, samplers.toBufferDescriptor(getDriverApi()));
     getDriverApi().bindSamplers(0, samplerGroup);
 
     // Render a triangle.
@@ -140,9 +142,9 @@ TEST_F(BackendTest, RenderExternalImage) {
     ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
 
     // Create a program that samples a texture.
-    Program p = shaderGen.getProgram();
+    Program p = shaderGen.getProgram(getDriverApi());
     Program::Sampler sampler { utils::CString("tex"), 6 };
-    p.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, &sampler, 1);
+    p.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, &sampler, 1);
     auto program = getDriverApi().createProgram(std::move(p));
 
     backend::Handle<HwRenderTarget> defaultRenderTarget = getDriverApi().createDefaultRenderTarget(0);
@@ -220,10 +222,10 @@ TEST_F(BackendTest, RenderExternalImage) {
     getDriverApi().makeCurrent(swapChain, swapChain);
     getDriverApi().beginFrame(0, 0);
 
-    SamplerGroup mSamplers(1);
-    mSamplers.setSampler(0, { texture, {} });
+    SamplerGroup samplers(1);
+    samplers.setSampler(0, { texture, {} });
     backend::Handle<HwSamplerGroup> samplerGroup = getDriverApi().createSamplerGroup(1);
-    getDriverApi().updateSamplerGroup(samplerGroup, std::move(mSamplers.toCommandStream()));
+    getDriverApi().updateSamplerGroup(samplerGroup, samplers.toBufferDescriptor(getDriverApi()));
     getDriverApi().bindSamplers(0, samplerGroup);
 
     // Render a triangle.

@@ -24,7 +24,7 @@
 #include "private/backend/AcquiredImage.h"
 #include "private/backend/Driver.h"
 #include "private/backend/HandleAllocator.h"
-#include "private/backend/Program.h"
+#include "backend/Program.h"
 
 #include "backend/TargetBufferInfo.h"
 
@@ -52,12 +52,12 @@ class OpenGLBlitter;
 class OpenGLTimerQueryInterface;
 
 class OpenGLDriver final : public DriverBase {
-    inline explicit OpenGLDriver(OpenGLPlatform* platform) noexcept;
+    inline explicit OpenGLDriver(OpenGLPlatform* platform, const Platform::DriverConfig& driverConfig) noexcept;
     ~OpenGLDriver() noexcept final;
     Dispatcher getDispatcher() const noexcept final;
 
 public:
-    static Driver* create(OpenGLPlatform* platform, void* sharedGLContext) noexcept;
+    static Driver* create(OpenGLPlatform* platform, void* sharedGLContext, const Platform::DriverConfig& driverConfig) noexcept;
 
     class DebugMarker {
         OpenGLDriver& driver;
@@ -97,8 +97,15 @@ public:
         } gl;
     };
 
+    struct GLTexture;
     struct GLSamplerGroup : public HwSamplerGroup {
         using HwSamplerGroup::HwSamplerGroup;
+        struct Entry {
+            GLTexture const* texture = nullptr;
+            GLuint sampler = 0u;
+        };
+        utils::FixedCapacityVector<Entry> textureUnitEntries;
+        explicit GLSamplerGroup(size_t size) noexcept : textureUnitEntries(size) { }
     };
 
     struct GLRenderPrimitive : public HwRenderPrimitive {
@@ -270,26 +277,21 @@ private:
     void framebufferTexture(TargetBufferInfo const& binfo,
             GLRenderTarget const* rt, GLenum attachment) noexcept;
 
-    void setRasterStateSlow(RasterState rs) noexcept;
-    void setRasterState(RasterState rs) noexcept {
-        mRenderPassColorWrite |= rs.colorWrite;
-        mRenderPassDepthWrite |= rs.depthWrite;
-        if (UTILS_UNLIKELY(rs != mRasterState)) {
-            setRasterStateSlow(rs);
-        }
-    }
+    void setRasterState(RasterState rs) noexcept;
+
+    void setStencilState(StencilState ss) noexcept;
 
     void setTextureData(GLTexture* t,
             uint32_t level,
             uint32_t xoffset, uint32_t yoffset, uint32_t zoffset,
             uint32_t width, uint32_t height, uint32_t depth,
-            PixelBufferDescriptor&& data, FaceOffsets const* faceOffsets);
+            PixelBufferDescriptor&& p);
 
     void setCompressedTextureData(GLTexture* t,
             uint32_t level,
             uint32_t xoffset, uint32_t yoffset, uint32_t zoffset,
             uint32_t width, uint32_t height, uint32_t depth,
-            PixelBufferDescriptor&& data, FaceOffsets const* faceOffsets);
+            PixelBufferDescriptor&& p);
 
     void renderBufferStorage(GLuint rbo, GLenum internalformat, uint32_t width,
             uint32_t height, uint8_t samples) const noexcept;
@@ -300,7 +302,7 @@ private:
     /* State tracking GL wrappers... */
 
            void bindTexture(GLuint unit, GLTexture const* t) noexcept;
-           void bindSampler(GLuint unit, SamplerParams params) noexcept;
+           void bindSampler(GLuint unit, GLuint sampler) noexcept;
     inline void useProgram(OpenGLProgram* p) noexcept;
 
     enum class ResolveAction { LOAD, STORE };
@@ -321,7 +323,7 @@ private:
         return pos->second;
     }
 
-    const std::array<HwSamplerGroup*, Program::BINDING_COUNT>& getSamplerBindings() const {
+    const std::array<GLSamplerGroup*, Program::SAMPLER_BINDING_COUNT>& getSamplerBindings() const {
         return mSamplerBindings;
     }
 
@@ -329,13 +331,12 @@ private:
     static GLsizei getAttachments(AttachmentArray& attachments,
             GLRenderTarget const* rt, TargetBufferFlags buffers) noexcept;
 
-    RasterState mRasterState;
-
     // state required to represent the current render pass
     Handle<HwRenderTarget> mRenderPassTarget;
     RenderPassParams mRenderPassParams;
     GLboolean mRenderPassColorWrite{};
     GLboolean mRenderPassDepthWrite{};
+    GLboolean mRenderPassStencilWrite{};
 
     void clearWithRasterPipe(TargetBufferFlags clearFlags,
             math::float4 const& linearColor, GLfloat depth, GLint stencil) noexcept;
@@ -343,7 +344,7 @@ private:
     void setViewportScissor(Viewport const& viewportScissor) noexcept;
 
     // sampler buffer binding points (nullptr if not used)
-    std::array<HwSamplerGroup*, Program::BINDING_COUNT> mSamplerBindings = {};   // 12 pointers
+    std::array<GLSamplerGroup*, Program::SAMPLER_BINDING_COUNT> mSamplerBindings = {};   // 4 pointers
 
     mutable tsl::robin_map<uint32_t, GLuint> mSamplerMap;
     mutable std::vector<GLTexture*> mExternalStreams;

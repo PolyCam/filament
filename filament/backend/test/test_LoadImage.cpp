@@ -19,6 +19,8 @@
 #include "ShaderGenerator.h"
 #include "TrianglePrimitive.h"
 
+#include "private/backend/SamplerGroup.h"
+
 #include <math/half.h>
 
 #include <fstream>
@@ -218,6 +220,8 @@ static const char* getSamplerTypeName(SamplerType samplerType) {
             return "samplerCube";
         case SamplerType::SAMPLER_3D:
             return "sampler3D";
+        case SamplerType::SAMPLER_CUBEMAP_ARRAY:
+            return "samplerCubeArray";
     }
 }
 
@@ -309,7 +313,7 @@ TEST_F(BackendTest, UpdateImage2D) {
     testCases.emplace_back("RGB, UINT_10F_11F_11F_REV -> R11F_G11F_B10F", PixelDataFormat::RGB, PixelDataType::UINT_10F_11F_11F_REV, TextureFormat::R11F_G11F_B10F);
     testCases.emplace_back("RGB, HALF -> R11F_G11F_B10F", PixelDataFormat::RGB, PixelDataType::HALF, TextureFormat::R11F_G11F_B10F);
 
-    /* // Test integer format uploads. */
+    // Test integer format uploads.
     // TODO: These cases fail on OpenGL and Vulkan.
     testCases.emplace_back("RGB_INTEGER, UBYTE -> RGB8UI", PixelDataFormat::RGB_INTEGER, PixelDataType::UBYTE, TextureFormat::RGB8UI);
     testCases.emplace_back("RGB_INTEGER, USHORT -> RGB16UI", PixelDataFormat::RGB_INTEGER, PixelDataType::USHORT, TextureFormat::RGB16UI);
@@ -345,9 +349,9 @@ TEST_F(BackendTest, UpdateImage2D) {
         std::string fragment = stringReplace("{samplerType}",
                 getSamplerTypeName(t.textureFormat), fragmentTemplate);
         ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
         program = api.createProgram(std::move(prog));
 
         // Create a Texture.
@@ -363,23 +367,23 @@ TEST_F(BackendTest, UpdateImage2D) {
             PixelBufferDescriptor subregion2 = checkerboardPixelBuffer(pf, pt, 256, t.bufferPadding);
             PixelBufferDescriptor subregion3 = checkerboardPixelBuffer(pf, pt, 256, t.bufferPadding);
             PixelBufferDescriptor subregion4 = checkerboardPixelBuffer(pf, pt, 256, t.bufferPadding);
-            api.update2DImage(texture, 0, 0, 0, 256, 256, std::move(subregion1));
-            api.update2DImage(texture, 0, 256, 0, 256, 256, std::move(subregion2));
-            api.update2DImage(texture, 0, 0, 256, 256, 256, std::move(subregion3));
-            api.update2DImage(texture, 0, 256, 256, 256, 256, std::move(subregion4));
+            api.update3DImage(texture, 0,   0,   0, 0, 256, 256, 1, std::move(subregion1));
+            api.update3DImage(texture, 0, 256,   0, 0, 256, 256, 1, std::move(subregion2));
+            api.update3DImage(texture, 0,   0, 256, 0, 256, 256, 1, std::move(subregion3));
+            api.update3DImage(texture, 0, 256, 256, 0, 256, 256, 1, std::move(subregion4));
         } else {
             PixelBufferDescriptor descriptor
                 = checkerboardPixelBuffer(t.pixelFormat, t.pixelType, 512, t.bufferPadding);
-            api.update2DImage(texture, 0, 0, 0, 512, 512, std::move(descriptor));
+            api.update3DImage(texture, 0, 0, 0, 0, 512, 512, 1, std::move(descriptor));
         }
 
         SamplerGroup samplers(1);
         SamplerParams sparams = {};
         sparams.filterMag = SamplerMagFilter::LINEAR;
         sparams.filterMin = SamplerMinFilter::LINEAR_MIPMAP_NEAREST;
-        samplers.setSampler(0, texture, sparams);
+        samplers.setSampler(0, { texture, sparams });
         auto sgroup = api.createSamplerGroup(samplers.getSize());
-        api.updateSamplerGroup(sgroup, std::move(samplers.toCommandStream()));
+        api.updateSamplerGroup(sgroup, samplers.toBufferDescriptor(api));
 
         api.bindSamplers(0, sgroup);
 
@@ -424,9 +428,9 @@ TEST_F(BackendTest, UpdateImageSRGB) {
     std::string fragment = stringReplace("{samplerType}",
             getSamplerTypeName(textureFormat), fragmentTemplate);
     ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
-    Program prog = shaderGen.getProgram();
-    Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-    prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+    Program prog = shaderGen.getProgram(api);
+    Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+    prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
     ProgramHandle program = api.createProgram(std::move(prog));
 
     // Create a texture.
@@ -454,7 +458,7 @@ TEST_F(BackendTest, UpdateImageSRGB) {
         }
     }
 
-    api.update2DImage(texture, 0, 0, 0, 512, 512, std::move(descriptor));
+    api.update3DImage(texture, 0, 0, 0, 0, 512, 512, 1, std::move(descriptor));
 
     api.beginFrame(0, 0);
 
@@ -463,9 +467,9 @@ TEST_F(BackendTest, UpdateImageSRGB) {
     SamplerParams sparams = {};
     sparams.filterMag = SamplerMagFilter::LINEAR;
     sparams.filterMin = SamplerMinFilter::LINEAR_MIPMAP_NEAREST;
-    samplers.setSampler(0, texture, sparams);
+    samplers.setSampler(0, { texture, sparams });
     auto sgroup = api.createSamplerGroup(samplers.getSize());
-    api.updateSamplerGroup(sgroup, std::move(samplers.toCommandStream()));
+    api.updateSamplerGroup(sgroup, samplers.toBufferDescriptor(api));
 
     api.bindSamplers(0, sgroup);
 
@@ -510,9 +514,9 @@ TEST_F(BackendTest, UpdateImageMipLevel) {
     std::string fragment = stringReplace("{samplerType}",
             getSamplerTypeName(textureFormat), fragmentUpdateImageMip);
     ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
-    Program prog = shaderGen.getProgram();
-    Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-    prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+    Program prog = shaderGen.getProgram(api);
+    Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+    prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
     ProgramHandle program = api.createProgram(std::move(prog));
 
     // Create a texture with 3 mip levels.
@@ -524,7 +528,7 @@ TEST_F(BackendTest, UpdateImageMipLevel) {
 
     // Create image data.
     PixelBufferDescriptor descriptor = checkerboardPixelBuffer(pixelFormat, pixelType, 512);
-    api.update2DImage(texture, 1, 0, 0, 512, 512, std::move(descriptor));
+    api.update3DImage(texture, 1, 0, 0, 0, 512, 512, 1, std::move(descriptor));
 
     api.beginFrame(0, 0);
 
@@ -533,9 +537,9 @@ TEST_F(BackendTest, UpdateImageMipLevel) {
     SamplerParams sparams = {};
     sparams.filterMag = SamplerMagFilter::LINEAR;
     sparams.filterMin = SamplerMinFilter::LINEAR_MIPMAP_NEAREST;
-    samplers.setSampler(0, texture, sparams);
+    samplers.setSampler(0, { texture, sparams });
     auto sgroup = api.createSamplerGroup(samplers.getSize());
-    api.updateSamplerGroup(sgroup, std::move(samplers.toCommandStream()));
+    api.updateSamplerGroup(sgroup, samplers.toBufferDescriptor(api));
 
     api.bindSamplers(0, sgroup);
 
@@ -582,9 +586,9 @@ TEST_F(BackendTest, UpdateImage3D) {
     std::string fragment = stringReplace("{samplerType}",
             getSamplerTypeName(samplerType), fragmentUpdateImage3DTemplate);
     ShaderGenerator shaderGen(vertex, fragment, sBackend, sIsMobilePlatform);
-    Program prog = shaderGen.getProgram();
-    Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-    prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+    Program prog = shaderGen.getProgram(api);
+    Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+    prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
     ProgramHandle program = api.createProgram(std::move(prog));
 
     // Create a texture.
@@ -615,9 +619,9 @@ TEST_F(BackendTest, UpdateImage3D) {
     SamplerParams sparams = {};
     sparams.filterMag = SamplerMagFilter::LINEAR;
     sparams.filterMin = SamplerMinFilter::LINEAR_MIPMAP_NEAREST;
-    samplers.setSampler(0, texture, sparams);
+    samplers.setSampler(0, { texture, sparams});
     auto sgroup = api.createSamplerGroup(samplers.getSize());
-    api.updateSamplerGroup(sgroup, std::move(samplers.toCommandStream()));
+    api.updateSamplerGroup(sgroup, samplers.toBufferDescriptor(api));
 
     api.bindSamplers(0, sgroup);
 

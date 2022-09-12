@@ -186,12 +186,12 @@ PostProcessManager::PostProcessManager(FEngine& engine) noexcept
 PostProcessManager::~PostProcessManager() noexcept = default;
 
 UTILS_NOINLINE
-void PostProcessManager::registerPostProcessMaterial(utils::StaticString name, uint8_t const* data, int size) {
+void PostProcessManager::registerPostProcessMaterial(std::string_view name, uint8_t const* data, int size) {
     mMaterialRegistry.try_emplace(name, mEngine, data, size);
 }
 
 UTILS_NOINLINE
-PostProcessManager::PostProcessMaterial& PostProcessManager::getPostProcessMaterial(utils::StaticString name) noexcept {
+PostProcessManager::PostProcessMaterial& PostProcessManager::getPostProcessMaterial(std::string_view name) noexcept {
     assert_invariant(mMaterialRegistry.find(name) != mMaterialRegistry.end());
     return mMaterialRegistry[name];
 }
@@ -199,7 +199,7 @@ PostProcessManager::PostProcessMaterial& PostProcessManager::getPostProcessMater
 #define MATERIAL(n) MATERIALS_ ## n ## _DATA, MATERIALS_ ## n ## _SIZE
 
 struct MaterialInfo {
-    utils::StaticString name;
+    std::string_view name;
     uint8_t const* data;
     int size;
 };
@@ -266,33 +266,15 @@ void PostProcessManager::init() noexcept {
     mStarburstTexture = driver.createTexture(SamplerType::SAMPLER_2D, 1,
             TextureFormat::R8, 1, 256, 1, 1, TextureUsage::DEFAULT);
 
-    PixelBufferDescriptor dataOne(driver.allocate(4), 4, PixelDataFormat::RGBA, PixelDataType::UBYTE);
-    PixelBufferDescriptor dataOneArray(driver.allocate(4), 4, PixelDataFormat::RGBA, PixelDataType::UBYTE);
-    PixelBufferDescriptor dataZero(driver.allocate(4), 4, PixelDataFormat::RGBA, PixelDataType::UBYTE);
     PixelBufferDescriptor dataStarburst(driver.allocate(256), 256, PixelDataFormat::R, PixelDataType::UBYTE);
-    *static_cast<uint32_t *>(dataOne.buffer) = 0xFFFFFFFF;
-    *static_cast<uint32_t *>(dataOneArray.buffer) = 0xFFFFFFFF;
-    *static_cast<uint32_t *>(dataZero.buffer) = 0;
     std::generate_n((uint8_t*)dataStarburst.buffer, 256,
             [&dist = mUniformDistribution, &gen = mEngine.getRandomEngine()]() {
         float r = 0.5f + 0.5f * dist(gen);
         return uint8_t(r * 255.0f);
     });
 
-    driver.update2DImage(engine.getOneTexture(),
-            0, 0, 0, 1, 1,
-            std::move(dataOne));
-
-    driver.update3DImage(engine.getOneTextureArray(),
-            0, 0, 0, 0, 1, 1, 1,
-            std::move(dataOneArray));
-
-    driver.update2DImage(engine.getZeroTexture(),
-            0, 0, 0, 1, 1,
-            std::move(dataZero));
-
-    driver.update2DImage(mStarburstTexture,
-            0, 0, 0, 256, 1,
+    driver.update3DImage(mStarburstTexture,
+            0, 0, 0, 0, 256, 1, 1,
             std::move(dataStarburst));
 }
 
@@ -1070,25 +1052,18 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::gaussianBlurPass(FrameGraph&
                 FGTD const& outDesc = resources.getDescriptor(data.out);
                 FGTD const& tempDesc = resources.getDescriptor(data.temp);
 
-                utils::StaticString materialName;
+                using namespace std::literals;
+                std::string_view materialName;
                 const bool is2dArray = inDesc.type == SamplerType::SAMPLER_2D_ARRAY;
                 switch (backend::getFormatSize(outDesc.format)) {
                     case 1: materialName  = is2dArray ?
-                            utils::StaticString("separableGaussianBlur1L") :
-                            utils::StaticString("separableGaussianBlur1");
-                            break;
+                            "separableGaussianBlur1L"sv : "separableGaussianBlur1"sv;   break;
                     case 2: materialName  = is2dArray ?
-                            utils::StaticString("separableGaussianBlur2L") :
-                            utils::StaticString("separableGaussianBlur2");
-                            break;
+                            "separableGaussianBlur2L"sv : "separableGaussianBlur2"sv;   break;
                     case 3: materialName  = is2dArray ?
-                            utils::StaticString("separableGaussianBlur3L") :
-                            utils::StaticString("separableGaussianBlur3");
-                            break;
+                            "separableGaussianBlur3L"sv : "separableGaussianBlur3"sv;   break;
                     default: materialName = is2dArray ?
-                            utils::StaticString("separableGaussianBlur4L") :
-                            utils::StaticString("separableGaussianBlur4");
-                            break;
+                            "separableGaussianBlur4L"sv : "separableGaussianBlur4"sv;   break;
                 }
 
                 auto const& separableGaussianBlur = getPostProcessMaterial(materialName);
@@ -2454,6 +2429,9 @@ void PostProcessManager::prepareTaa(FrameGraph& fg, filament::Viewport const& sv
 
     // update projection matrix
     inoutCameraInfo->projection[2].xy -= jitterInClipSpace;
+    // VERTEX_DOMAIN_DEVICE doesn't apply the projection, but it still needs this
+    // clip transform, so we apply it separately (see main.vs)
+    inoutCameraInfo->clipTransfrom.zw -= jitterInClipSpace;
 
     fg.addTrivialSideEffectPass("Jitter Camera",
             [=, &uniforms] (DriverApi& driver) {
@@ -2758,7 +2736,7 @@ FrameGraphId<FrameGraphTexture> PostProcessManager::upscale(FrameGraph& fg, bool
                 }
 
                 { // just a scope to not leak local variables
-                    const StaticString blitterNames[4] = {
+                    const std::string_view blitterNames[4] = {
                             "blitLow", "fsr_easu_mobile", "fsr_easu_mobile", "fsr_easu" };
                     unsigned index = std::min(3u, (unsigned)dsrOptions.quality);
                     easuMaterial = &getPostProcessMaterial(blitterNames[index]);

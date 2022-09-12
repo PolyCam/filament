@@ -49,13 +49,13 @@ static VkShaderStageFlags getShaderStageFlags(utils::bitset64 key, uint16_t bind
 utils::bitset64
 static getPipelineLayoutKey(const Program::SamplerGroupInfo& samplerGroupInfo) noexcept {
     utils::bitset64 key = {};
-    for (uint32_t binding = 0; binding < Program::BINDING_COUNT; ++binding) {
+    for (uint32_t binding = 0; binding < Program::SAMPLER_BINDING_COUNT; ++binding) {
         const auto& stageFlags = samplerGroupInfo[binding].stageFlags;
         for (const auto& sampler : samplerGroupInfo[binding].samplers) {
-            if (stageFlags.vertex) {
+            if (any(stageFlags & ShaderStageFlags::VERTEX)) {
                 key.set(sampler.binding * 2 + 0);
             }
-            if (stageFlags.fragment) {
+            if (any(stageFlags & ShaderStageFlags::FRAGMENT)) {
                 key.set(sampler.binding * 2 + 1);
             }
         }
@@ -695,7 +695,7 @@ void VulkanPipelineCache::onCommandBuffer(const VulkanCommandBuffer& cmdbuffer) 
     ++mCurrentTime;
 
     // The Vulkan spec says: "When a command buffer begins recording, all state in that command
-    // buffer is undefined." Therefore we need to clear all bindings at this time.
+    // buffer is undefined." Therefore, we need to clear all bindings at this time.
     mBoundPipeline = {};
     mBoundLayout = {};
     mBoundDescriptor = {};

@@ -57,6 +57,12 @@
 #define GLTFIO_WARN(msg) slog.w << msg << io::endl
 #endif
 
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(IOS)
+#define GLTFIO_USE_FILESYSTEM 0
+#else
+#define GLTFIO_USE_FILESYSTEM 1
+#endif
+
 namespace utils {
     class NameComponentManager;
     class EntityManager;
@@ -204,18 +210,6 @@ struct FFilamentAsset : public FilamentAsset {
 
     Animator* getAnimator() const noexcept { return mAnimator; }
 
-    size_t getSkinCount() const noexcept;
-
-    const char* getSkinNameAt(size_t skinIndex) const noexcept;
-
-    size_t getJointCountAt(size_t skinIndex) const noexcept;
-
-    const utils::Entity* getJointsAt(size_t skinIndex) const noexcept;
-
-    void attachSkin(size_t skinIndex, Entity target) noexcept;
-
-    void detachSkin(size_t skinIndex, Entity target) noexcept;
-
     const char* getMorphTargetNameAt(utils::Entity entity, size_t targetIndex) const noexcept;
 
     size_t getMorphTargetCountAt(utils::Entity entity) const noexcept;
@@ -255,9 +249,17 @@ struct FFilamentAsset : public FilamentAsset {
     void addEntitiesToScene(filament::Scene& targetScene, const Entity* entities, size_t count,
             SceneMask sceneFilter);
 
+    void detachFilamentComponents() noexcept {
+        mDetachedFilamentComponents = true;
+    }
+
+    void detachMaterialInstances() {
+        mMaterialInstances.clear();
+    }
+
     // end public API
 
-    void takeOwnership(filament::Texture* texture) {
+    void attachTexture(filament::Texture* texture) {
         mTextures.push_back(texture);
     }
 
@@ -265,10 +267,6 @@ struct FFilamentAsset : public FilamentAsset {
         assert_invariant(texture);
         tb.materialInstance->setParameter(tb.materialParameter, texture, tb.sampler);
         mDependencyGraph.addEdge(texture, tb.materialInstance, tb.materialParameter);
-    }
-
-    bool isInstanced() const {
-        return mInstances.size() > 0;
     }
 
     void createAnimators();
@@ -292,13 +290,16 @@ struct FFilamentAsset : public FilamentAsset {
     filament::Aabb mBoundingBox;
     utils::Entity mRoot;
     std::vector<FFilamentInstance*> mInstances;
-    SkinVector mSkins; // unused for instanced assets
     Animator* mAnimator = nullptr;
     Wireframe* mWireframe = nullptr;
+
+    // Indicates if resource decoding has started (not necessarily finished)
     bool mResourcesLoaded = false;
+
     DependencyGraph mDependencyGraph;
     tsl::htrie_map<char, std::vector<utils::Entity>> mNameToEntity;
     utils::CString mAssetExtras;
+    bool mDetachedFilamentComponents = false;
 
     // Sentinels for situations where ResourceLoader needs to generate data.
     const cgltf_accessor mGenerateNormals = {};
@@ -323,7 +324,6 @@ struct FFilamentAsset : public FilamentAsset {
     std::vector<BufferSlot> mBufferSlots;
     std::vector<TextureSlot> mTextureSlots;
     std::vector<const char*> mResourceUris;
-    NodeMap mNodeMap; // unused for instanced assets
     std::vector<std::pair<const cgltf_primitive*, filament::VertexBuffer*> > mPrimitives;
     MatInstanceCache mMatInstanceCache;
     MeshCache mMeshCache;

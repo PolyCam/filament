@@ -43,6 +43,7 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
         FrameGraphId<FrameGraphTexture> color;
         FrameGraphId<FrameGraphTexture> output;
         FrameGraphId<FrameGraphTexture> depth;
+        FrameGraphId<FrameGraphTexture> stencil;
         FrameGraphId<FrameGraphTexture> ssao;
         FrameGraphId<FrameGraphTexture> ssr;    // either screen-space reflections or refractions
         FrameGraphId<FrameGraphTexture> structure;
@@ -57,6 +58,7 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
 
                 TargetBufferFlags clearDepthFlags = config.clearFlags & TargetBufferFlags::DEPTH;
                 TargetBufferFlags clearColorFlags = config.clearFlags & TargetBufferFlags::COLOR;
+                TargetBufferFlags clearStencilFlags = config.clearFlags & TargetBufferFlags::STENCIL;
 
                 data.shadows = blackboard.get<FrameGraphTexture>("shadows");
                 data.ssao = blackboard.get<FrameGraphTexture>("ssao");
@@ -86,20 +88,21 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
                 }
 
                 if (!data.color) {
-                    // FIXME: this works only when the viewport is full
-                    //  if (view.isSkyboxVisible()) {
-                    //      // if the skybox is visible, then we don't need to clear at all
-                    //      clearColorFlags &= ~TargetBufferFlags::COLOR;
-                    //  }
                     data.color = builder.createTexture("Color Buffer", colorBufferDesc);
                 }
 
                 const bool canResolveDepth = engine.getDriverApi().isAutoDepthResolveSupported();
 
                 if (!data.depth) {
-                    // clear newly allocated depth buffers, regardless of given clear flags
+                    // clear newly allocated depth/stencil buffers, regardless of given clear flags
                     clearDepthFlags = TargetBufferFlags::DEPTH;
-                    data.depth = builder.createTexture("Depth Buffer", {
+                    clearStencilFlags = config.enabledStencilBuffer ?
+                            TargetBufferFlags::STENCIL : TargetBufferFlags::NONE;
+                    const char* const name = config.enabledStencilBuffer ?
+                             "Depth/Stencil Buffer" : "Depth Buffer";
+                    TextureFormat format = config.enabledStencilBuffer ?
+                            TextureFormat::DEPTH32F_STENCIL8 : TextureFormat::DEPTH32F;
+                    data.depth = builder.createTexture(name, {
                             .width = colorBufferDesc.width,
                             .height = colorBufferDesc.height,
                             // If the color attachment requested MS, we assume this means the MS buffer
@@ -109,8 +112,11 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
                             // the tile depth buffer will be MS, but it'll be resolved to single
                             // sample automatically -- which is what we want.
                             .samples = canResolveDepth ? colorBufferDesc.samples : uint8_t(config.msaa),
-                            .format = TextureFormat::DEPTH32F,
+                            .format = format,
                     });
+                    if (config.enabledStencilBuffer) {
+                        data.stencil = data.depth;
+                    }
                 }
 
                 if (colorGradingConfig.asSubpass) {
@@ -148,12 +154,14 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
                  * is initialized in this file).
                  */
                 builder.declareRenderPass("Color Pass Target", {
-                        .attachments = { .color = { data.color, data.output }, .depth = data.depth },
-                        .samples = config.msaa,
-                        .clearFlags = clearColorFlags | clearDepthFlags });
+                        .attachments = { .color = { data.color, data.output },
+                                .depth = data.depth,
+                                .stencil = data.stencil },
+                                .samples = config.msaa,
+                        .clearFlags = clearColorFlags | clearDepthFlags | clearStencilFlags });
 
                 data.clearColor = config.clearColor;
-                data.clearFlags = clearColorFlags | clearDepthFlags;
+                data.clearFlags = clearColorFlags | clearDepthFlags | clearStencilFlags;
 
                 blackboard["depth"] = data.depth;
             },
@@ -195,6 +203,7 @@ FrameGraphId<FrameGraphTexture> RendererUtils::colorPass(
                 view.commitUniforms(driver);
 
                 out.params.clearColor = data.clearColor;
+                out.params.clearStencil = config.clearStencil;
                 out.params.flags.clear = data.clearFlags;
                 if (view.getBlendMode() == BlendMode::TRANSLUCENT) {
                     if (any(out.params.flags.discardStart & TargetBufferFlags::COLOR0)) {
@@ -296,18 +305,14 @@ UTILS_NOINLINE
 void RendererUtils::readPixels(backend::DriverApi& driver, Handle<HwRenderTarget> renderTargetHandle,
         uint32_t xoffset, uint32_t yoffset, uint32_t width, uint32_t height,
         backend::PixelBufferDescriptor&& buffer) {
-    if (!ASSERT_POSTCONDITION_NON_FATAL(
+    ASSERT_PRECONDITION(
             buffer.type != PixelDataType::COMPRESSED,
-            "buffer.format cannot be COMPRESSED")) {
-        return;
-    }
+            "buffer.format cannot be COMPRESSED");
 
-    if (!ASSERT_POSTCONDITION_NON_FATAL(
+    ASSERT_PRECONDITION(
             buffer.alignment > 0 && buffer.alignment <= 8 &&
             !(buffer.alignment & (buffer.alignment - 1u)),
-            "buffer.alignment must be 1, 2, 4 or 8")) {
-        return;
-    }
+            "buffer.alignment must be 1, 2, 4 or 8");
 
     // It's not really possible to know here which formats will be supported because
     // it can vary depending on the RenderTarget, in GL the following are ALWAYS supported though:
@@ -320,10 +325,8 @@ void RendererUtils::readPixels(backend::DriverApi& driver, Handle<HwRenderTarget
             buffer.top + height,
             buffer.alignment);
 
-    if (!ASSERT_POSTCONDITION_NON_FATAL(buffer.size >= sizeNeeded,
-            "Pixel buffer too small: has %u bytes, needs %u bytes", buffer.size, sizeNeeded)) {
-        return;
-    }
+    ASSERT_PRECONDITION(buffer.size >= sizeNeeded,
+            "Pixel buffer too small: has %u bytes, needs %u bytes", buffer.size, sizeNeeded);
 
     driver.readPixels(renderTargetHandle, xoffset, yoffset, width, height, std::move(buffer));
 }
