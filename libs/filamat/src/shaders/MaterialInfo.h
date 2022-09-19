@@ -18,9 +18,12 @@
 #define TNT_FILAMAT_MATERIALINFO_H
 
 #include <backend/DriverEnums.h>
+
+#include "../SamplerBindingMap.h"
+
 #include <filament/MaterialEnums.h>
+
 #include <private/filament/UniformInterfaceBlock.h>
-#include <private/filament/SamplerBindingMap.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 #include <private/filament/SubpassInfo.h>
 
@@ -47,6 +50,7 @@ struct UTILS_PUBLIC MaterialInfo {
     bool hasCustomSurfaceShading;
     bool useLegacyMorphing;
     bool instanced;
+    bool vertexDomainDeviceJittered;
     filament::SpecularAmbientOcclusion specularAO;
     filament::RefractionMode refractionMode;
     filament::RefractionType refractionType;
@@ -60,6 +64,7 @@ struct UTILS_PUBLIC MaterialInfo {
     filament::SubpassInfo subpass;
     filament::SamplerBindingMap samplerBindings;
     filament::ShaderQuality quality;
+    filament::backend::FeatureLevel featureLevel;
 };
 
 }

@@ -23,12 +23,13 @@
 
 #include <filament/Material.h>
 
-#include <private/filament/SamplerBindingMap.h>
+#include <private/filament/SamplerBindingsInfo.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 #include <private/filament/SubpassInfo.h>
 #include <private/filament/Variant.h>
 
 #include <utils/compiler.h>
+#include <utils/Mutex.h>
 
 #include <atomic>
 
@@ -68,7 +69,7 @@ public:
 
     bool isSampler(const char* name) const noexcept;
 
-    UniformInterfaceBlock::UniformInfo const* reflect(utils::StaticString const& name) const noexcept;
+    UniformInterfaceBlock::UniformInfo const* reflect(std::string_view name) const noexcept;
 
     FMaterialInstance const* getDefaultInstance() const noexcept { return &mDefaultInstance; }
     FMaterialInstance* getDefaultInstance() noexcept { return &mDefaultInstance; }
@@ -90,7 +91,9 @@ public:
     [[nodiscard]] backend::Handle<backend::HwProgram> getProgram(Variant variant) const noexcept {
 #if FILAMENT_ENABLE_MATDBG
         assert_invariant(variant.key < VARIANT_COUNT);
+        std::unique_lock<utils::Mutex> lock(mActiveProgramsLock);
         mActivePrograms.set(variant.key);
+        lock.unlock();
 #endif
         assert_invariant(mCachedPrograms[variant.key]);
         return mCachedPrograms[variant.key];
@@ -102,6 +105,7 @@ public:
     bool isVariantLit() const noexcept { return mIsVariantLit; }
 
     const utils::CString& getName() const noexcept { return mName; }
+    backend::FeatureLevel getFeatureLevel() const noexcept { return mFeatureLevel; }
     backend::RasterState getRasterState() const noexcept  { return mRasterState; }
     uint32_t getId() const noexcept { return mMaterialId; }
 
@@ -193,6 +197,7 @@ private:
     BlendingMode mRenderBlendingMode = BlendingMode::OPAQUE;
     TransparencyMode mTransparencyMode = TransparencyMode::DEFAULT;
     bool mIsVariantLit = false;
+    backend::FeatureLevel mFeatureLevel = backend::FeatureLevel::FEATURE_LEVEL_1;
     Shading mShading = Shading::UNLIT;
 
     BlendingMode mBlendingMode = BlendingMode::OPAQUE;
@@ -221,11 +226,14 @@ private:
     SamplerInterfaceBlock mSamplerInterfaceBlock;
     UniformInterfaceBlock mUniformInterfaceBlock;
     SubpassInfo mSubpassInfo;
-    SamplerBindingMap mSamplerBindings;
+    utils::FixedCapacityVector<std::pair<const char*, uint8_t>> mUniformBlockBindings;
+    utils::FixedCapacityVector<utils::CString> mUniformBlockNames;
+    SamplerGroupBindingInfoList mSamplerGroupBindingInfoList;
+    SamplerBindingToNameMap mSamplerBindingToNameMap;
 
 #if FILAMENT_ENABLE_MATDBG
     matdbg::MaterialKey mDebuggerId;
-    // TODO: this should be protected with a mutex
+    mutable utils::Mutex mActiveProgramsLock;
     mutable VariantList mActivePrograms;
 #endif
 

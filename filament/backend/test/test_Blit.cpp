@@ -176,7 +176,6 @@ static void createFaces(DriverApi& dapi, Handle<HwTexture> texture, int baseWidt
 
     // Draw a circle on a yellow background.
     uint32_t* texels = (uint32_t*) buffer0;
-    FaceOffsets offsets;
     for (int face = 0; face < 6; face++) {
         for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++) {
@@ -187,12 +186,11 @@ static void createFaces(DriverApi& dapi, Handle<HwTexture> texture, int baseWidt
                 texels[row * width + col] = toUintColor(float4(color, 1.0f));
             }
         }
-        offsets[face] = face * width * height * 4;
-        texels += offsets[face] / 4;
+        texels += face * width * height;
     }
 
     // Upload to the GPU.
-    dapi.updateCubeImage(texture, level, std::move(pb), offsets);
+    dapi.update3DImage(texture, level, 0, 0, 0, width, height, 6, std::move(pb));
 }
 
 TEST_F(BackendTest, CubemapMinify) {
@@ -418,10 +416,10 @@ TEST_F(BackendTest, DepthMinify) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 
@@ -560,10 +558,10 @@ TEST_F(BackendTest, ColorResolve) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 
@@ -668,10 +666,10 @@ TEST_F(BackendTest, DepthResolve) {
     ProgramHandle program;
     {
         ShaderGenerator shaderGen(triangleVs, triangleFs, sBackend, sIsMobilePlatform);
-        Program prog = shaderGen.getProgram();
-        Program::Sampler psamplers[] = { utils::CString("tex"), 0, false };
-        prog.setSamplerGroup(0, ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
-        prog.setUniformBlock(1, utils::CString("params"));
+        Program prog = shaderGen.getProgram(api);
+        Program::Sampler psamplers[] = { utils::CString("tex"), 0 };
+        prog.setSamplerGroup(0, ShaderStageFlags::ALL_SHADER_STAGE_FLAGS, psamplers, sizeof(psamplers) / sizeof(psamplers[0]));
+        prog.uniformBlockBindings({{"params", 1}});
         program = api.createProgram(std::move(prog));
     }
 

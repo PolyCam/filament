@@ -24,6 +24,7 @@
 
 #include <filament/MaterialChunkType.h>
 
+#include <private/filament/SamplerBindingsInfo.h>
 #include <private/filament/SamplerInterfaceBlock.h>
 #include <private/filament/UniformInterfaceBlock.h>
 #include <private/filament/SubpassInfo.h>
@@ -118,6 +119,10 @@ bool MaterialParser::getMaterialVersion(uint32_t* value) const noexcept {
     return mImpl.getFromSimpleChunk(ChunkType::MaterialVersion, value);
 }
 
+bool MaterialParser::getFeatureLevel(uint8_t* value) const noexcept {
+    return mImpl.getFromSimpleChunk(ChunkType::MaterialFeatureLevel, value);
+}
+
 bool MaterialParser::getName(utils::CString* cstring) const noexcept {
    ChunkType type = ChunkType::MaterialName;
    const uint8_t* start = mImpl.mChunkContainer.getChunkStart(type);
@@ -156,6 +161,26 @@ bool MaterialParser::getShaderModels(uint32_t* value) const noexcept {
 
 bool MaterialParser::getMaterialProperties(uint64_t* value) const noexcept {
     return mImpl.getFromSimpleChunk(ChunkType::MaterialProperties, value);
+}
+
+bool MaterialParser::getUniformBlockBindings(
+        utils::FixedCapacityVector<std::pair<utils::CString, uint8_t>>* value) const noexcept {
+    auto type = MaterialUniformBindings;
+    const uint8_t* start = mImpl.mChunkContainer.getChunkStart(type);
+    const uint8_t* end = mImpl.mChunkContainer.getChunkEnd(type);
+    Unflattener unflattener(start, end);
+    return ChunkUniformBlockBindings::unflatten(unflattener, value);
+}
+
+bool MaterialParser::getSamplerBlockBindings(
+        SamplerGroupBindingInfoList* pSamplerGroupInfoList,
+        SamplerBindingToNameMap* pSamplerBindingToNameMap) const noexcept {
+    auto type = MaterialSamplerBindings;
+    const uint8_t* start = mImpl.mChunkContainer.getChunkStart(type);
+    const uint8_t* end = mImpl.mChunkContainer.getChunkEnd(type);
+    Unflattener unflattener(start, end);
+    return ChunkSamplerBlockBindings::unflatten(unflattener,
+            pSamplerGroupInfoList, pSamplerBindingToNameMap);
 }
 
 bool MaterialParser::getDepthWriteSet(bool* value) const noexcept {
@@ -300,7 +325,7 @@ bool ChunkUniformInterfaceBlock::unflatten(Unflattener& unflattener,
         return false;
     }
 
-    builder.name(std::move(name));
+    builder.name({ name.data(), name.size() });
 
     // Read number of fields.
     uint64_t numFields = 0;
@@ -331,9 +356,10 @@ bool ChunkUniformInterfaceBlock::unflatten(Unflattener& unflattener,
         }
 
         // a size of 1 means not an array
-        builder.add(fieldName, fieldSize == 1 ? 0 : fieldSize,
-                UniformInterfaceBlock::Type(fieldType),
-                UniformInterfaceBlock::Precision(fieldPrecision));
+        builder.add({{{ fieldName.data(), fieldName.size() },
+                      uint32_t(fieldSize == 1 ? 0 : fieldSize),
+                      UniformInterfaceBlock::Type(fieldType),
+                      UniformInterfaceBlock::Precision(fieldPrecision) }});
     }
 
     *uib = builder.build();
@@ -349,7 +375,7 @@ bool ChunkSamplerInterfaceBlock::unflatten(Unflattener& unflattener,
     if (!unflattener.read(&name)) {
         return false;
     }
-    builder.name(name);
+    builder.name({ name.data(), name.size() });
 
     // Read number of fields.
     uint64_t numFields = 0;
@@ -384,7 +410,7 @@ bool ChunkSamplerInterfaceBlock::unflatten(Unflattener& unflattener,
             return false;
         }
 
-        builder.add(fieldName, SamplerInterfaceBlock::Type(fieldType),
+        builder.add({ fieldName.data(), fieldName.size() }, SamplerInterfaceBlock::Type(fieldType),
                 SamplerInterfaceBlock::Format(fieldFormat),
                 SamplerInterfaceBlock::Precision(fieldPrecision),
                 fieldMultisample);
@@ -444,6 +470,73 @@ bool ChunkSubpassInterfaceBlock::unflatten(Unflattener& unflattener,
         subpass->precision = Precision (subpassPrecision);
 
         subpass->isValid = true;
+    }
+
+    return true;
+}
+
+bool ChunkUniformBlockBindings::unflatten(filaflat::Unflattener& unflattener,
+        utils::FixedCapacityVector<std::pair<utils::CString, uint8_t>>* uniformBlockBindings) {
+    uint8_t count;
+    if (!unflattener.read(&count)) {
+        return false;
+    }
+    uniformBlockBindings->reserve(count);
+
+    for (uint8_t i = 0; i < count; i++) {
+        CString name;
+        uint8_t binding;
+        if (!unflattener.read(&name)) {
+            return false;
+        }
+        if (!unflattener.read(&binding)) {
+            return false;
+        }
+        uniformBlockBindings->emplace_back(std::move(name), binding);
+    }
+    return true;
+}
+
+
+bool ChunkSamplerBlockBindings::unflatten(Unflattener& unflattener,
+        SamplerGroupBindingInfoList* pSamplerGroupBindingInfoList,
+        SamplerBindingToNameMap* pSamplerBindingToNameMap) {
+    assert_invariant(pSamplerGroupBindingInfoList && pSamplerBindingToNameMap);
+    SamplerGroupBindingInfoList& samplerGroupBindingInfoList = *pSamplerGroupBindingInfoList;
+    SamplerBindingToNameMap& samplerBindingToNameMap = *pSamplerBindingToNameMap;
+
+    uint8_t count;
+    if (!unflattener.read(&count)) {
+        return false;
+    }
+    assert_invariant(count == utils::Enum::count<SamplerBindingPoints>());
+
+    UTILS_NOUNROLL
+    for (size_t i = 0; i < count; i++) {
+        if (!unflattener.read(&samplerGroupBindingInfoList[i].bindingOffset)) {
+            return false;
+        }
+        if (!unflattener.read((uint8_t *)&samplerGroupBindingInfoList[i].shaderStageFlags)) {
+            return false;
+        }
+        if (!unflattener.read(&samplerGroupBindingInfoList[i].count)) {
+            return false;
+        }
+    }
+
+    if (!unflattener.read(&count)) {
+        return false;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        uint8_t binding;
+        if (!unflattener.read(&binding)) {
+            return false;
+        }
+        assert_invariant(binding < backend::MAX_SAMPLER_COUNT);
+        if (!unflattener.read(&samplerBindingToNameMap[binding])) {
+            return false;
+        }
     }
 
     return true;

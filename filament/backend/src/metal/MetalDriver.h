@@ -22,6 +22,8 @@
 
 #include "private/backend/HandleAllocator.h"
 
+#include <backend/SamplerDescriptor.h>
+
 #include <utils/compiler.h>
 #include <utils/Log.h>
 #include <utils/debug.h>
@@ -42,12 +44,12 @@ struct UniformBufferState;
 #endif
 
 class MetalDriver final : public DriverBase {
-    explicit MetalDriver(MetalPlatform* platform) noexcept;
+    explicit MetalDriver(MetalPlatform* platform, const Platform::DriverConfig& driverConfig) noexcept;
     ~MetalDriver() noexcept override;
     Dispatcher getDispatcher() const noexcept final;
 
 public:
-    static Driver* create(MetalPlatform* platform);
+    static Driver* create(MetalPlatform* platform, const Platform::DriverConfig& driverConfig);
 
 private:
 
@@ -125,7 +127,7 @@ private:
             uint32_t offset, uint32_t minIndex, uint32_t maxIndex, uint32_t count);
 
     void enumerateSamplerGroups(const MetalProgram* program, ShaderType shaderType,
-            const std::function<void(const SamplerGroup::Sampler*, size_t)>& f);
+            const std::function<void(const SamplerDescriptor*, size_t)>& f);
     void enumerateBoundUniformBuffers(const std::function<void(const UniformBufferState&,
             MetalBuffer*, uint32_t)>& f);
 

@@ -101,9 +101,11 @@ public:
     inline void colorMask(GLboolean flag) noexcept;
     inline void depthMask(GLboolean flag) noexcept;
     inline void depthFunc(GLenum func) noexcept;
-    inline void stencilFunc(GLenum func, GLint ref, GLuint mask) noexcept;
-    inline void stencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) noexcept;
-    inline void stencilMask(GLuint mask) noexcept;
+    inline void stencilFuncSeparate(GLenum funcFront, GLint refFront, GLuint maskFront,
+            GLenum funcBack, GLint refBack, GLuint maskBack) noexcept;
+    inline void stencilOpSeparate(GLenum sfailFront, GLenum dpfailFront, GLenum dppassFront,
+            GLenum sfailBack, GLenum dpfailBack, GLenum dppassBack) noexcept;
+    inline void stencilMaskSeparate(GLuint maskFront, GLuint maskBack) noexcept;
     inline void polygonOffset(GLfloat factor, GLfloat units) noexcept;
     inline void beginQuery(GLenum target, GLuint query) noexcept;
     inline void endQuery(GLenum target) noexcept;
@@ -123,6 +125,7 @@ public:
         GLint max_renderbuffer_size;
         GLint max_samples;
         GLint max_uniform_block_size;
+        GLint max_texture_image_units;
         GLint uniform_buffer_offset_alignment;
     } gets = {};
 
@@ -143,9 +146,12 @@ public:
         bool EXT_multisampled_render_to_texture = false;
         bool EXT_multisampled_render_to_texture2 = false;
         bool EXT_shader_framebuffer_fetch = false;
+        bool KHR_texture_compression_astc_hdr = false;
+        bool KHR_texture_compression_astc_ldr = false;
         bool EXT_texture_compression_etc2 = false;
         bool EXT_texture_compression_s3tc = false;
         bool EXT_texture_compression_s3tc_srgb = false;
+        bool EXT_texture_cube_map_array = false;
         bool EXT_texture_filter_anisotropic = false;
         bool EXT_texture_sRGB = false;
         bool GOOGLE_cpp_style_line_directive = false;
@@ -205,6 +211,10 @@ public:
         // view that this is generally forbidden. However, this restriction is lifted on desktop
         // GL and Vulkan and probably Metal.
         bool allow_read_only_ancillary_feedback_loop = false;
+
+        // Some Adreno drivers crash in glDrawXXX() when there's an uninitialized uniform block,
+        // even when the shader doesn't access it.
+        bool enable_initialize_non_used_uniform_array = false;
     } bugs;
 
     // state getters -- as needed.
@@ -217,8 +227,128 @@ public:
     }
     void resetProgram() noexcept { state.program.use = 0; }
 
+    FeatureLevel getFeatureLevel() const noexcept { return mFeatureLevel; }
+
+    // Try to keep the State structure sorted by data-access patterns
+    struct State {
+        GLint major = 0;
+        GLint minor = 0;
+
+        char const* vendor = nullptr;
+        char const* renderer = nullptr;
+        char const* version = nullptr;
+        char const* shader = nullptr;
+
+        GLuint draw_fbo = 0;
+        GLuint read_fbo = 0;
+
+        struct {
+            GLuint use = 0;
+        } program;
+
+        struct {
+            RenderPrimitive* p = nullptr;
+        } vao;
+
+        struct {
+            GLenum frontFace            = GL_CCW;
+            GLenum cullFace             = GL_BACK;
+            GLenum blendEquationRGB     = GL_FUNC_ADD;
+            GLenum blendEquationA       = GL_FUNC_ADD;
+            GLenum blendFunctionSrcRGB  = GL_ONE;
+            GLenum blendFunctionSrcA    = GL_ONE;
+            GLenum blendFunctionDstRGB  = GL_ZERO;
+            GLenum blendFunctionDstA    = GL_ZERO;
+            GLboolean colorMask         = GL_TRUE;
+            GLboolean depthMask         = GL_TRUE;
+            GLenum depthFunc            = GL_LESS;
+        } raster;
+
+        struct {
+            struct StencilFunc {
+                GLenum func             = GL_ALWAYS;
+                GLint ref               = 0;
+                GLuint mask             = ~GLuint(0);
+                bool operator != (StencilFunc const& rhs) const noexcept {
+                    return func != rhs.func || ref != rhs.ref || mask != rhs.mask;
+                }
+            };
+            struct StencilOp {
+                GLenum sfail            = GL_KEEP;
+                GLenum dpfail           = GL_KEEP;
+                GLenum dppass           = GL_KEEP;
+                bool operator != (StencilOp const& rhs) const noexcept {
+                    return sfail != rhs.sfail || dpfail != rhs.dpfail || dppass != rhs.dppass;
+                }
+            };
+            struct {
+                StencilFunc func;
+                StencilOp op;
+                GLuint stencilMask      = ~GLuint(0);
+            } front, back;
+        } stencil;
+
+        struct PolygonOffset {
+            GLfloat factor = 0;
+            GLfloat units = 0;
+            bool operator != (PolygonOffset const& rhs) const noexcept {
+                return factor != rhs.factor || units != rhs.units;
+            }
+        } polygonOffset;
+
+        struct {
+            utils::bitset32 caps;
+        } enables;
+
+        struct {
+            struct {
+                struct {
+                    GLuint name = 0;
+                    GLintptr offset = 0;
+                    GLsizeiptr size = 0;
+                } buffers[MAX_BUFFER_BINDINGS];
+            } targets[2];   // there are only 2 indexed buffer target (uniform and transform feedback)
+            GLuint genericBinding[8] = { 0 };
+        } buffers;
+
+        struct {
+            GLuint active = 0;      // zero-based
+            struct {
+                GLuint sampler = 0;
+                struct {
+                    GLuint texture_id = 0;
+                } targets[7];  // this must match getIndexForTextureTarget()
+            } units[MAX_TEXTURE_UNIT_COUNT];
+        } textures;
+
+        struct {
+            GLint row_length = 0;
+            GLint alignment = 4;
+            GLint skip_pixels = 0;
+            GLint skip_row = 0;
+        } unpack;
+
+        struct {
+            GLint row_length = 0;
+            GLint alignment = 4;
+            GLint skip_pixels = 0;
+            GLint skip_row = 0;
+        } pack;
+
+        struct {
+            vec4gli scissor { 0 };
+            vec4gli viewport { 0 };
+            vec2glf depthRange { 0.0f, 1.0f };
+        } window;
+
+        struct {
+            GLuint timer = -1u;
+        } queries;
+    } state;
+
 private:
-    ShaderModel mShaderModel = ShaderModel::UNKNOWN;
+    ShaderModel mShaderModel = ShaderModel::MOBILE;
+    FeatureLevel mFeatureLevel = FeatureLevel::FEATURE_LEVEL_1;
 
     const std::array<std::tuple<bool const&, char const*, char const*>, sizeof(bugs)> mBugDatabase{{
             {   bugs.disable_glFlush,
@@ -257,117 +387,10 @@ private:
             {   bugs.allow_read_only_ancillary_feedback_loop,
                     "allow_read_only_ancillary_feedback_loop",
                     ""},
+            {   bugs.enable_initialize_non_used_uniform_array,
+                    "enable_initialize_non_used_uniform_array",
+                    ""},
     }};
-
-    // Try to keep the State structure sorted by data-access patterns
-    struct State {
-        GLint major = 0;
-        GLint minor = 0;
-
-        char const* vendor = nullptr;
-        char const* renderer = nullptr;
-        char const* version = nullptr;
-        char const* shader = nullptr;
-
-        GLuint draw_fbo = 0;
-        GLuint read_fbo = 0;
-
-        struct {
-            GLuint use = 0;
-        } program;
-
-        struct {
-            RenderPrimitive* p = nullptr;
-        } vao;
-
-        struct {
-            GLenum frontFace            = GL_CCW;
-            GLenum cullFace             = GL_BACK;
-            GLenum blendEquationRGB     = GL_FUNC_ADD;
-            GLenum blendEquationA       = GL_FUNC_ADD;
-            GLenum blendFunctionSrcRGB  = GL_ONE;
-            GLenum blendFunctionSrcA    = GL_ONE;
-            GLenum blendFunctionDstRGB  = GL_ZERO;
-            GLenum blendFunctionDstA    = GL_ZERO;
-            GLboolean colorMask         = GL_TRUE;
-            GLboolean depthMask         = GL_TRUE;
-            GLenum depthFunc            = GL_LESS;
-            struct StencilFunc {
-                GLenum func             = GL_ALWAYS;
-                GLint ref               = 0;
-                GLuint mask             = ~GLuint(0);
-                bool operator != (StencilFunc const& rhs) const noexcept {
-                    return func != rhs.func || ref != rhs.ref || mask != rhs.mask;
-                }
-            } stencilFunc;
-            struct StencilOp {
-                GLenum sfail            = GL_KEEP;
-                GLenum dpfail           = GL_KEEP;
-                GLenum dppass           = GL_KEEP;
-                bool operator != (StencilOp const& rhs) const noexcept {
-                    return sfail != rhs.sfail || dpfail != rhs.dpfail || dppass != rhs.dppass;
-                }
-            } stencilOp;
-            GLuint stencilMask          = ~GLuint(0);
-        } raster;
-
-        struct PolygonOffset {
-            GLfloat factor = 0;
-            GLfloat units = 0;
-            bool operator != (PolygonOffset const& rhs) const noexcept {
-                return factor != rhs.factor || units != rhs.units;
-            }
-        } polygonOffset;
-
-        struct {
-            utils::bitset32 caps;
-        } enables;
-
-        struct {
-            struct {
-                struct {
-                    GLuint name = 0;
-                    GLintptr offset = 0;
-                    GLsizeiptr size = 0;
-                } buffers[MAX_BUFFER_BINDINGS];
-            } targets[2];   // there are only 2 indexed buffer target (uniform and transform feedback)
-            GLuint genericBinding[8] = { 0 };
-        } buffers;
-
-        struct {
-            GLuint active = 0;      // zero-based
-            struct {
-                GLuint sampler = 0;
-                struct {
-                    GLuint texture_id = 0;
-                } targets[6];  // this must match getIndexForTextureTarget()
-            } units[MAX_TEXTURE_UNIT_COUNT];
-        } textures;
-
-        struct {
-            GLint row_length = 0;
-            GLint alignment = 4;
-            GLint skip_pixels = 0;
-            GLint skip_row = 0;
-        } unpack;
-
-        struct {
-            GLint row_length = 0;
-            GLint alignment = 4;
-            GLint skip_pixels = 0;
-            GLint skip_row = 0;
-        } pack;
-
-        struct {
-            vec4gli scissor { 0 };
-            vec4gli viewport { 0 };
-            vec2glf depthRange { 0.0f, 1.0f };
-        } window;
-
-        struct {
-            GLuint timer = -1u;
-        } queries;
-    } state;
 
     RenderPrimitive mDefaultVAO;
 
@@ -393,13 +416,15 @@ private:
 constexpr size_t OpenGLContext::getIndexForTextureTarget(GLuint target) noexcept {
     // this must match state.textures[].targets[]
     switch (target) {
-        case GL_TEXTURE_2D:             return 0;
-        case GL_TEXTURE_2D_ARRAY:       return 1;
-        case GL_TEXTURE_CUBE_MAP:       return 2;
-        case GL_TEXTURE_2D_MULTISAMPLE: return 3;
-        case GL_TEXTURE_EXTERNAL_OES:   return 4;
-        case GL_TEXTURE_3D:             return 5;
-        default:                        return 0;
+        case GL_TEXTURE_2D:                     return 0;
+        case GL_TEXTURE_2D_ARRAY:               return 1;
+        case GL_TEXTURE_CUBE_MAP:               return 2;
+        case GL_TEXTURE_2D_MULTISAMPLE:         return 3;
+        case GL_TEXTURE_EXTERNAL_OES:           return 4;
+        case GL_TEXTURE_3D:                     return 5;
+        case GL_TEXTURE_CUBE_MAP_ARRAY:         return 6;
+        default:
+            return 0;
     }
 }
 
@@ -596,21 +621,18 @@ void OpenGLContext::disable(GLenum cap) noexcept {
 }
 
 void OpenGLContext::frontFace(GLenum mode) noexcept {
-    // WARNING: don't call this without updating mRasterState
     update_state(state.raster.frontFace, mode, [&]() {
         glFrontFace(mode);
     });
 }
 
 void OpenGLContext::cullFace(GLenum mode) noexcept {
-    // WARNING: don't call this without updating mRasterState
     update_state(state.raster.cullFace, mode, [&]() {
         glCullFace(mode);
     });
 }
 
 void OpenGLContext::blendEquation(GLenum modeRGB, GLenum modeA) noexcept {
-    // WARNING: don't call this without updating mRasterState
     if (UTILS_UNLIKELY(
             state.raster.blendEquationRGB != modeRGB || state.raster.blendEquationA != modeA)) {
         state.raster.blendEquationRGB = modeRGB;
@@ -620,7 +642,6 @@ void OpenGLContext::blendEquation(GLenum modeRGB, GLenum modeA) noexcept {
 }
 
 void OpenGLContext::blendFunction(GLenum srcRGB, GLenum srcA, GLenum dstRGB, GLenum dstA) noexcept {
-    // WARNING: don't call this without updating mRasterState
     if (UTILS_UNLIKELY(
             state.raster.blendFunctionSrcRGB != srcRGB ||
             state.raster.blendFunctionSrcA != srcA ||
@@ -635,43 +656,48 @@ void OpenGLContext::blendFunction(GLenum srcRGB, GLenum srcA, GLenum dstRGB, GLe
 }
 
 void OpenGLContext::colorMask(GLboolean flag) noexcept {
-    // WARNING: don't call this without updating mRasterState
     update_state(state.raster.colorMask, flag, [&]() {
         glColorMask(flag, flag, flag, flag);
     });
 }
 void OpenGLContext::depthMask(GLboolean flag) noexcept {
-    // WARNING: don't call this without updating mRasterState
     update_state(state.raster.depthMask, flag, [&]() {
         glDepthMask(flag);
     });
 }
 
 void OpenGLContext::depthFunc(GLenum func) noexcept {
-    // WARNING: don't call this without updating mRasterState
     update_state(state.raster.depthFunc, func, [&]() {
         glDepthFunc(func);
     });
 }
 
-void OpenGLContext::stencilFunc(GLenum func, GLint ref, GLuint mask) noexcept {
-    // WARNING: don't call this without updating mRasterState
-    update_state(state.raster.stencilFunc, {func, ref, mask}, [&]() {
-        glStencilFunc(func, ref, mask);
+void OpenGLContext::stencilFuncSeparate(GLenum funcFront, GLint refFront, GLuint maskFront,
+        GLenum funcBack, GLint refBack, GLuint maskBack) noexcept {
+    update_state(state.stencil.front.func, {funcFront, refFront, maskFront}, [&]() {
+        glStencilFuncSeparate(GL_FRONT, funcFront, refFront, maskFront);
+    });
+    update_state(state.stencil.back.func, {funcBack, refBack, maskBack}, [&]() {
+        glStencilFuncSeparate(GL_BACK, funcBack, refBack, maskBack);
     });
 }
 
-void OpenGLContext::stencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) noexcept {
-    // WARNING: don't call this without updating mRasterState
-    update_state(state.raster.stencilOp, {sfail, dpfail, dppass}, [&]() {
-        glStencilOp(sfail, dpfail, dppass);
+void OpenGLContext::stencilOpSeparate(GLenum sfailFront, GLenum dpfailFront, GLenum dppassFront,
+        GLenum sfailBack, GLenum dpfailBack, GLenum dppassBack) noexcept {
+    update_state(state.stencil.front.op, {sfailFront, dpfailFront, dppassFront}, [&]() {
+        glStencilOpSeparate(GL_FRONT, sfailFront, dpfailFront, dppassFront);
+    });
+    update_state(state.stencil.back.op, {sfailBack, dpfailBack, dppassBack}, [&]() {
+        glStencilOpSeparate(GL_BACK, sfailBack, dpfailBack, dppassBack);
     });
 }
 
-void OpenGLContext::stencilMask(GLuint mask) noexcept {
-    // WARNING: don't call this without updating mRasterState
-    update_state(state.raster.stencilMask, mask, [&]() {
-        glStencilMask(mask);
+void OpenGLContext::stencilMaskSeparate(GLuint maskFront, GLuint maskBack) noexcept {
+    update_state(state.stencil.front.stencilMask, maskFront, [&]() {
+        glStencilMaskSeparate(GL_FRONT, maskFront);
+    });
+    update_state(state.stencil.back.stencilMask, maskBack, [&]() {
+        glStencilMaskSeparate(GL_BACK, maskBack);
     });
 }
 
@@ -720,6 +746,7 @@ GLuint OpenGLContext::getQuery(GLenum target) const noexcept {
             return 0;
     }
 }
+
 } // namespace filament
 
 #endif //TNT_FILAMENT_BACKEND_OPENGLCONTEXT_H

@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-#include "private/filament/SibGenerator.h"
+#include "SibGenerator.h"
 
 #include "private/filament/Variant.h"
 #include "private/filament/EngineEnums.h"
-
-#include <private/filament/SamplerInterfaceBlock.h>
+#include "private/filament/SamplerInterfaceBlock.h"
+#include "private/filament/SibStructs.h"
 
 namespace filament {
 
@@ -30,7 +30,7 @@ SamplerInterfaceBlock const& SibGenerator::getPerViewSib(Variant variant) noexce
 
     static SamplerInterfaceBlock sibPcf = SamplerInterfaceBlock::Builder()
             .name("Light")
-            .stageFlags({ .fragment = true })
+            .stageFlags(backend::ShaderStageFlags::FRAGMENT)
             .add(  {{ "shadowMap",   Type::SAMPLER_2D_ARRAY, Format::SHADOW, Precision::MEDIUM },
                     { "froxels",     Type::SAMPLER_2D,       Format::UINT,   Precision::MEDIUM },
                     { "iblDFG",      Type::SAMPLER_2D,       Format::FLOAT,  Precision::MEDIUM },
@@ -43,7 +43,7 @@ SamplerInterfaceBlock const& SibGenerator::getPerViewSib(Variant variant) noexce
 
     static SamplerInterfaceBlock sibVsm = SamplerInterfaceBlock::Builder()
             .name("Light")
-            .stageFlags({ .fragment = true })
+            .stageFlags(backend::ShaderStageFlags::FRAGMENT)
             .add(  {{ "shadowMap",   Type::SAMPLER_2D_ARRAY, Format::FLOAT,  Precision::HIGH   },
                     { "froxels",     Type::SAMPLER_2D,       Format::UINT,   Precision::MEDIUM },
                     { "iblDFG",      Type::SAMPLER_2D,       Format::FLOAT,  Precision::MEDIUM },
@@ -56,7 +56,7 @@ SamplerInterfaceBlock const& SibGenerator::getPerViewSib(Variant variant) noexce
 
     static SamplerInterfaceBlock sibSsr = SamplerInterfaceBlock::Builder()
             .name("Light")
-            .stageFlags({ .fragment = true })
+            .stageFlags(backend::ShaderStageFlags::FRAGMENT)
             .add(  {{ "shadowMap",   Type::SAMPLER_2D_ARRAY, Format::SHADOW, Precision::MEDIUM },
                     { "froxels",     Type::SAMPLER_2D,       Format::UINT,   Precision::MEDIUM },
                     { "iblDFG",      Type::SAMPLER_2D,       Format::FLOAT,  Precision::MEDIUM },
@@ -67,7 +67,7 @@ SamplerInterfaceBlock const& SibGenerator::getPerViewSib(Variant variant) noexce
             )
             .build();
 
-    // SamplerBindingMap relies the assumption that Sibs have the same names and offsets
+    // SamplerBindingMap relies on the assumption that Sibs have the same names and offsets
     // regardless of variant.
     assert(sibPcf.getSize() == PerViewSib::SAMPLER_COUNT);
     assert(sibVsm.getSize() == PerViewSib::SAMPLER_COUNT);
@@ -89,7 +89,7 @@ SamplerInterfaceBlock const& SibGenerator::getPerRenderPrimitiveMorphingSib(Vari
 
     static SamplerInterfaceBlock sib = SamplerInterfaceBlock::Builder()
             .name("MorphTargetBuffer")
-            .stageFlags({ .vertex = true })
+            .stageFlags(backend::ShaderStageFlags::VERTEX)
             .add({  { "positions", Type::SAMPLER_2D_ARRAY, Format::FLOAT, Precision::HIGH },
                     { "tangents",  Type::SAMPLER_2D_ARRAY, Format::INT,   Precision::HIGH }})
             .build();
@@ -97,16 +97,12 @@ SamplerInterfaceBlock const& SibGenerator::getPerRenderPrimitiveMorphingSib(Vari
     return sib;
 }
 
-SamplerInterfaceBlock const* SibGenerator::getSib(uint8_t bindingPoint, Variant variant) noexcept {
+SamplerInterfaceBlock const* SibGenerator::getSib(SamplerBindingPoints bindingPoint, Variant variant) noexcept {
     switch (bindingPoint) {
-        case BindingPoints::PER_VIEW:
+        case SamplerBindingPoints::PER_VIEW:
             return &getPerViewSib(variant);
-        case BindingPoints::PER_RENDERABLE:
-            return nullptr;
-        case BindingPoints::PER_RENDERABLE_MORPHING:
+        case SamplerBindingPoints::PER_RENDERABLE_MORPHING:
             return &getPerRenderPrimitiveMorphingSib(variant);
-        case BindingPoints::LIGHTS:
-            return nullptr;
         default:
             return nullptr;
     }

@@ -29,7 +29,7 @@
 
 #include <filament/MaterialEnums.h>
 #include <private/filament/Variant.h>
-#include <private/filament/SibGenerator.h>
+#include "SibGenerator.h"
 
 #include <utils/Log.h>
 
@@ -45,6 +45,8 @@ using namespace filament::backend;
 
 namespace filamat {
 
+using namespace utils;
+
 namespace msl {  // this is only used for MSL
 
 using BindingIndexMap = std::unordered_map<std::string, uint16_t>;
@@ -53,12 +55,10 @@ UTILS_NOINLINE
 static void generateBindingIndexMap(const GLSLPostProcessor::Config& config,
         SamplerInterfaceBlock const& sib, BindingIndexMap& map) {
     const auto stageFlags = sib.getStageFlags();
-    if (stageFlags.hasShaderType(config.shaderType)) {
+    if (hasShaderType(stageFlags, config.shaderType)) {
         const auto& infoList = sib.getSamplerInfoList();
         for (const auto& info: infoList) {
-            auto uniformName = SamplerInterfaceBlock::getUniformName(
-                    sib.getName().c_str(), info.name.c_str());
-            map[uniformName.c_str()] = map.size();
+            map[info.uniformName.c_str()] = map.size();
         }
     }
 }
@@ -68,9 +68,9 @@ static BindingIndexMap getBindingIndexMap(const GLSLPostProcessor::Config& confi
     switch (config.domain) {
         case MaterialDomain::SURFACE:
             UTILS_NOUNROLL
-            for (uint8_t blockIndex = 0; blockIndex < BindingPoints::COUNT; blockIndex++) {
-                if (blockIndex != BindingPoints::PER_MATERIAL_INSTANCE) {
-                    auto const* sib = SibGenerator::getSib(blockIndex, config.variant);
+            for (size_t blockIndex = 0; blockIndex < Enum::count<SamplerBindingPoints>(); blockIndex++) {
+                if (blockIndex != SamplerBindingPoints::PER_MATERIAL_INSTANCE) {
+                    auto const* sib = SibGenerator::getSib(SamplerBindingPoints(blockIndex), config.variant);
                     if (sib) {
                         generateBindingIndexMap(config, *sib, map);
                     }
@@ -92,18 +92,17 @@ GLSLPostProcessor::GLSLPostProcessor(MaterialBuilder::Optimization optimization,
     // SPIRV error handler registration needs to occur only once. To avoid a race we do it up here
     // in the constructor, which gets invoked before MaterialBuilder kicks off jobs.
     spv::spirvbin_t::registerErrorHandler([](const std::string& str) {
-        utils::slog.e << str << utils::io::endl;
+        slog.e << str << io::endl;
     });
 }
 
 GLSLPostProcessor::~GLSLPostProcessor() = default;
 
-static uint32_t shaderVersionFromModel(ShaderModel model) {
+static uint32_t glslVersionFromShaderModel(ShaderModel model) {
     switch (model) {
-        case ShaderModel::UNKNOWN:
-        case ShaderModel::GL_ES_30:
+        case ShaderModel::MOBILE:
             return 300;
-        case ShaderModel::GL_CORE_41:
+        case ShaderModel::DESKTOP:
             return 410;
     }
 }
@@ -164,19 +163,19 @@ void GLSLPostProcessor::spirvToToMsl(const SpirvBlob *spirv, std::string *outMsl
     mslCompiler.set_common_options(options);
 
     const CompilerMSL::Options::Platform platform =
-        config.shaderModel == ShaderModel::GL_ES_30 ?
+        config.shaderModel == ShaderModel::MOBILE ?
             CompilerMSL::Options::Platform::iOS : CompilerMSL::Options::Platform::macOS;
 
     CompilerMSL::Options mslOptions = {};
     mslOptions.platform = platform,
-    mslOptions.msl_version = config.shaderModel == ShaderModel::GL_ES_30 ?
+    mslOptions.msl_version = config.shaderModel == ShaderModel::MOBILE ?
         CompilerMSL::Options::make_msl_version(2, 0) : CompilerMSL::Options::make_msl_version(2, 2);
 
     if (config.hasFramebufferFetch) {
         mslOptions.use_framebuffer_fetch_subpasses = true;
         // On macOS, framebuffer fetch is only available starting with MSL 2.3. Filament will only
         // use framebuffer fetch materials on devices that support it.
-        if (config.shaderModel == ShaderModel::GL_CORE_41) {
+        if (config.shaderModel == ShaderModel::DESKTOP) {
             mslOptions.msl_version = CompilerMSL::Options::make_msl_version(2, 3);
         }
     }
@@ -226,7 +225,7 @@ bool GLSLPostProcessor::process(const std::string& inputShader, Config const& co
     if (targetApi == TargetApi::OPENGL && mOptimization == MaterialBuilder::Optimization::NONE) {
         *outputGlsl = inputShader;
         if (mPrintShaders) {
-            utils::slog.i << *outputGlsl << utils::io::endl;
+            slog.i << *outputGlsl << io::endl;
         }
         return true;
     }
@@ -258,7 +257,7 @@ bool GLSLPostProcessor::process(const std::string& inputShader, Config const& co
     EShMessages msg = GLSLTools::glslangFlagsFromTargetApi(targetApi);
     bool ok = tShader.parse(&DefaultTBuiltInResource, internalConfig.langVersion, false, msg);
     if (!ok) {
-        utils::slog.e << tShader.getInfoLog() << utils::io::endl;
+        slog.e << tShader.getInfoLog() << io::endl;
         return false;
     }
 
@@ -273,7 +272,7 @@ bool GLSLPostProcessor::process(const std::string& inputShader, Config const& co
     // SPIR-V types
     bool linkOk = program.link(msg);
     if (!linkOk) {
-        utils::slog.e << tShader.getInfoLog() << utils::io::endl;
+        slog.e << tShader.getInfoLog() << io::endl;
         return false;
     }
 
@@ -289,8 +288,8 @@ bool GLSLPostProcessor::process(const std::string& inputShader, Config const& co
                             internalConfig.minifier);
                 }
             } else {
-                utils::slog.e << "GLSL post-processor invoked with optimization level NONE"
-                        << utils::io::endl;
+                slog.e << "GLSL post-processor invoked with optimization level NONE"
+                        << io::endl;
             }
             break;
         case MaterialBuilder::Optimization::PREPROCESSOR:
@@ -313,7 +312,7 @@ bool GLSLPostProcessor::process(const std::string& inputShader, Config const& co
         }
 
         if (mPrintShaders) {
-            utils::slog.i << *internalConfig.glslOutput << utils::io::endl;
+            slog.i << *internalConfig.glslOutput << io::endl;
         }
     }
     return true;
@@ -334,7 +333,7 @@ void GLSLPostProcessor::preprocessOptimization(glslang::TShader& tShader,
             msg, &glsl, forbidIncluder);
 
     if (!ok) {
-        utils::slog.e << tShader.getInfoLog() << utils::io::endl;
+        slog.e << tShader.getInfoLog() << io::endl;
     }
 
     if (internalConfig.spirvOutput) {
@@ -355,7 +354,7 @@ void GLSLPostProcessor::preprocessOptimization(glslang::TShader& tShader,
         // SPIR-V types
         bool linkOk = program.link(msg);
         if (!ok || !linkOk) {
-            utils::slog.e << spirvShader.getInfoLog() << utils::io::endl;
+            slog.e << spirvShader.getInfoLog() << io::endl;
         } else {
             SpvOptions options;
             options.generateDebugInfo = mGenerateDebugInfo;
@@ -398,8 +397,8 @@ void GLSLPostProcessor::fullOptimization(const TShader& tShader,
     // Transpile back to GLSL
     if (internalConfig.glslOutput) {
         CompilerGLSL::Options glslOptions;
-        glslOptions.es = config.shaderModel == ShaderModel::GL_ES_30;
-        glslOptions.version = shaderVersionFromModel(config.shaderModel);
+        glslOptions.es = config.shaderModel == ShaderModel::MOBILE;
+        glslOptions.version = glslVersionFromShaderModel(config.shaderModel);
         glslOptions.enable_420pack_extension = glslOptions.version >= 420;
         glslOptions.fragment.default_float_precision = glslOptions.es ?
                 CompilerGLSL::Options::Precision::Mediump : CompilerGLSL::Options::Precision::Highp;
@@ -433,8 +432,8 @@ std::shared_ptr<spvtools::Optimizer> GLSLPostProcessor::createOptimizer(
         if (!filterSpvOptimizerMessage(level)) {
             return;
         }
-        utils::slog.e << stringifySpvOptimizerMessage(level, source, position, message)
-                << utils::io::endl;
+        slog.e << stringifySpvOptimizerMessage(level, source, position, message)
+                << io::endl;
     });
 
     if (optimization == MaterialBuilder::Optimization::SIZE) {
@@ -455,7 +454,7 @@ std::shared_ptr<spvtools::Optimizer> GLSLPostProcessor::createOptimizer(
 
 void GLSLPostProcessor::optimizeSpirv(OptimizerPtr optimizer, SpirvBlob& spirv) const {
     if (!optimizer->Run(spirv.data(), spirv.size(), &spirv)) {
-        utils::slog.e << "SPIR-V optimizer pass failed" << utils::io::endl;
+        slog.e << "SPIR-V optimizer pass failed" << io::endl;
         return;
     }
 
@@ -469,7 +468,7 @@ void GLSLPostProcessor::registerPerformancePasses(Optimizer& optimizer, Config c
             .RegisterPass(CreateWrapOpKillPass())
             .RegisterPass(CreateDeadBranchElimPass());
 
-    if (config.shaderModel != ShaderModel::GL_CORE_41 ||
+    if (config.shaderModel != ShaderModel::DESKTOP ||
             config.targetApi != MaterialBuilder::TargetApi::OPENGL) {
         // this triggers a segfault with AMD OpenGL drivers on MacOS
         // note that Metal also requires this pass in order to correctly generate half-precision MSL
@@ -515,7 +514,7 @@ void GLSLPostProcessor::registerSizePasses(Optimizer& optimizer, Config const& c
             .RegisterPass(CreateWrapOpKillPass())
             .RegisterPass(CreateDeadBranchElimPass());
 
-    if (config.shaderModel != ShaderModel::GL_CORE_41) {
+    if (config.shaderModel != ShaderModel::DESKTOP) {
         // this triggers a segfault with AMD drivers on MacOS
         optimizer.RegisterPass(CreateMergeReturnPass());
     }

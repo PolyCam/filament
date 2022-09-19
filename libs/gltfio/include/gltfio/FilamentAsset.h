@@ -219,41 +219,6 @@ public:
     Animator* getAnimator() const noexcept;
 
     /**
-     * Gets the number of skins.
-     */
-    size_t getSkinCount() const noexcept;
-
-    /**
-     * Gets the skin name at skin index.
-     */
-    const char* getSkinNameAt(size_t skinIndex) const noexcept;
-
-    /**
-     * Gets the number of joints at skin index.
-     */
-    size_t getJointCountAt(size_t skinIndex) const noexcept;
-
-    /**
-     * Gets joints at skin index.
-     */
-    const Entity* getJointsAt(size_t skinIndex) const noexcept;
-
-    /**
-     * Attaches the given skin to the given node, which must have an associated mesh with
-     * BONE_INDICES and BONE_WEIGHTS attributes.
-     *
-     * This is a no-op if the given skin index or target is invalid.
-     */
-    void attachSkin(size_t skinIndex, Entity target) noexcept;
-
-    /**
-     * Detaches the given skin from the given node.
-     *
-     * This is a no-op if the given skin index or target is invalid.
-     */
-    void detachSkin(size_t skinIndex, Entity target) noexcept;
-
-    /**
      * Gets the morph target name at the given index in the given entity.
      */
     const char* getMorphTargetNameAt(Entity entity, size_t targetIndex) const noexcept;
@@ -333,6 +298,30 @@ public:
      */
     void addEntitiesToScene(filament::Scene& targetScene, const Entity* entities, size_t count,
             SceneMask sceneFilter);
+
+    /**
+     * Releases ownership of entities and their Filament components.
+     *
+     * This makes the client take responsibility for destroying Filament
+     * components (e.g. Renderable, TransformManager component) as well as
+     * the underlying entities.
+     */
+    void detachFilamentComponents() noexcept;
+
+    bool areFilamentComponentsDetached() const noexcept;
+
+    /**
+     * Releases ownership of material instances.
+     *
+     * This makes the client take responsibility for destroying MaterialInstance
+     * objects. The getMaterialInstances query becomes invalid after detachment.
+     */
+    void detachMaterialInstances();
+
+    /**
+     * Convenience function to get the first instance (which always exists).
+     */
+    FilamentInstance* getInstance() noexcept { return getAssetInstances()[0]; }
 
     /*! \cond PRIVATE */
 

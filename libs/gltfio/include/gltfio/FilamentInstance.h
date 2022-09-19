@@ -20,6 +20,8 @@
 #include <utils/compiler.h>
 #include <utils/Entity.h>
 
+#include <filament/Box.h>
+
 namespace filament::gltfio {
 
 class Animator;
@@ -74,6 +76,59 @@ public:
      * The animator is owned by the asset and should not be manually deleted.
      */
     Animator* getAnimator() noexcept;
+
+    /**
+     * Gets the number of skins.
+     */
+    size_t getSkinCount() const noexcept;
+
+    /**
+     * Gets the skin name at skin index.
+     */
+    const char* getSkinNameAt(size_t skinIndex) const noexcept;
+
+    /**
+     * Gets the number of joints at skin index.
+     */
+    size_t getJointCountAt(size_t skinIndex) const noexcept;
+
+    /**
+     * Gets joints at skin index.
+     */
+    const utils::Entity* getJointsAt(size_t skinIndex) const noexcept;
+
+    /**
+     * Attaches the given skin to the given node, which must have an associated mesh with
+     * BONE_INDICES and BONE_WEIGHTS attributes.
+     *
+     * This is a no-op if the given skin index or target is invalid.
+     */
+    void attachSkin(size_t skinIndex, utils::Entity target) noexcept;
+
+    /**
+     * Detaches the given skin from the given node.
+     *
+     * This is a no-op if the given skin index or target is invalid.
+     */
+    void detachSkin(size_t skinIndex, utils::Entity target) noexcept;
+
+    /**
+     * Resets the AABB on all renderables by manually computing the bounding box.
+     *
+     * THIS IS ONLY USEFUL FOR MALFORMED ASSETS THAT DO NOT HAVE MIN/MAX SET UP CORRECTLY.
+     *
+     * Does not affect the return value of getBoundingBox() on the owning asset.
+     * Cannot be called after releaseSourceData() on the owning asset.
+     * Can only be called after loadResources() or asyncBeginLoad().
+     */
+    void recomputeBoundingBoxes();
+
+    /**
+     * Gets the axis-aligned bounding box from the supplied min / max values in glTF accessors.
+     *
+     * If recomputeBoundingBoxes() has been called, then this returns the recomputed AABB.
+     */
+    Aabb getBoundingBox() const noexcept;
 };
 
 } // namespace filament::gltfio

@@ -26,7 +26,8 @@
 #include "details/Texture.h"
 #include "details/Material.h"
 
-#include "private/filament/SibGenerator.h"
+#include <private/filament/SibStructs.h>
+
 #include "filament/RenderableManager.h"
 
 
@@ -231,10 +232,8 @@ RenderableManager::Builder& RenderableManager::Builder::globalBlendOrderEnabled(
 RenderableManager::Builder::Result RenderableManager::Builder::build(Engine& engine, Entity entity) {
     bool isEmpty = true;
 
-    if (!ASSERT_PRECONDITION_NON_FATAL(mImpl->mSkinningBoneCount <= CONFIG_MAX_BONE_COUNT,
-            "bone count > %u", CONFIG_MAX_BONE_COUNT)) {
-        return Error;
-    }
+    ASSERT_PRECONDITION(mImpl->mSkinningBoneCount <= CONFIG_MAX_BONE_COUNT,
+            "bone count > %u", CONFIG_MAX_BONE_COUNT);
 
     for (size_t i = 0, c = mImpl->mEntries.size(); i < c; i++) {
         auto& entry = mImpl->mEntries[i];
@@ -253,22 +252,21 @@ RenderableManager::Builder::Result RenderableManager::Builder::build(Engine& eng
             continue;
         }
 
+        // we want a feature level violation to be a hard error (exception if enabled, or crash)
+        ASSERT_PRECONDITION(upcast(engine).hasFeatureLevel(material->getFeatureLevel()),
+                "Material \"%s\" has feature level %u which is not supported by this Engine",
+                material->getName().c_str_safe(), (uint8_t)material->getFeatureLevel());
+
         // reject invalid geometry parameters
-        if (!ASSERT_PRECONDITION_NON_FATAL(entry.offset + entry.count <= entry.indices->getIndexCount(),
+        ASSERT_PRECONDITION(entry.offset + entry.count <= entry.indices->getIndexCount(),
                 "[entity=%u, primitive @ %u] offset (%u) + count (%u) > indexCount (%u)",
                 i, entity.getId(),
-                entry.offset, entry.count, entry.indices->getIndexCount())) {
-            entry.vertices = nullptr;
-            return Error;
-        }
+                entry.offset, entry.count, entry.indices->getIndexCount());
 
-        if (!ASSERT_PRECONDITION_NON_FATAL(entry.minIndex <= entry.maxIndex,
+        ASSERT_PRECONDITION(entry.minIndex <= entry.maxIndex,
                 "[entity=%u, primitive @ %u] minIndex (%u) > maxIndex (%u)",
                 i, entity.getId(),
-                entry.minIndex, entry.maxIndex)) {
-            entry.vertices = nullptr;
-            return Error;
-        }
+                entry.minIndex, entry.maxIndex);
 
         // this can't be an error because (1) those values are not immutable, so the caller
         // could fix later, and (2) the material's shader will work (i.e. compile), and
@@ -285,16 +283,13 @@ RenderableManager::Builder::Result RenderableManager::Builder::build(Engine& eng
         isEmpty = false;
     }
 
-    if (!ASSERT_POSTCONDITION_NON_FATAL(
+    ASSERT_PRECONDITION(
             !mImpl->mAABB.isEmpty() ||
             (!mImpl->mCulling && (!(mImpl->mReceiveShadows || mImpl->mCastShadows)) ||
              isEmpty),
             "[entity=%u] AABB can't be empty, unless culling is disabled and "
-                    "the object is not a shadow caster/receiver", entity.getId())) {
-        return Error;
-    }
+                    "the object is not a shadow caster/receiver", entity.getId());
 
-    // we get here only if there was no POSTCONDITION errors.
     upcast(engine).createRenderable(*this, entity);
     return Success;
 }
@@ -404,6 +399,15 @@ void FRenderableManager::create(
                                 out, boneCount * sizeof(PerRenderableBoneUib::BoneData) }, 0);
                     }
                 }
+                else {
+                    // When boneCount is 0, do an initialization for the bones uniform array to avoid crash on adreno gpu.
+                    if (UTILS_UNLIKELY(driver.isWorkaroundNeeded(Workaround::ADRENO_UNIFORM_ARRAY_CRASH))) {
+                        auto *initBones = driver.allocatePod<PerRenderableBoneUib::BoneData>(1);
+                        std::uninitialized_fill_n(initBones, 1, FSkinningBuffer::makeBone({}));
+                        driver.updateBufferObject(bones.handle, {
+                                initBones, sizeof(PerRenderableBoneUib::BoneData) }, 0);
+                    }
+                }
             }
         }
 
@@ -435,6 +439,12 @@ void FRenderableManager::create(
                 }
                 morphTargets[i] = { upcast(morphing.buffer), (uint32_t)morphing.offset,
                                     (uint32_t)morphing.count };
+            }
+            
+            // When targetCount equal 0, boneCount>0 in this case, do an initialization for the morphWeights uniform array to avoid crash on adreno gpu.
+            if (UTILS_UNLIKELY(targetCount == 0 && driver.isWorkaroundNeeded(Workaround::ADRENO_UNIFORM_ARRAY_CRASH))) {
+                float initWeights[1] = {0};
+                setMorphWeights(ci, initWeights, 1, 0);
             }
         }
     }
@@ -510,12 +520,20 @@ void FRenderableManager::destroyComponentMorphTargets(FEngine& engine,
 }
 
 void FRenderableManager::setMaterialInstanceAt(Instance instance, uint8_t level,
-        size_t primitiveIndex, FMaterialInstance const* mi) noexcept {
+        size_t primitiveIndex, FMaterialInstance const* mi) {
     if (instance) {
         Slice<FRenderPrimitive>& primitives = getRenderPrimitives(instance, level);
         if (primitiveIndex < primitives.size()) {
-            primitives[primitiveIndex].setMaterialInstance(upcast(mi));
-            AttributeBitset required = mi->getMaterial()->getRequiredAttributes();
+            assert_invariant(mi);
+            FMaterial const* material = mi->getMaterial();
+
+            // we want a feature level violation to be a hard error (exception if enabled, or crash)
+            ASSERT_PRECONDITION(mEngine.hasFeatureLevel(material->getFeatureLevel()),
+                    "Material \"%s\" has feature level %u which is not supported by this Engine",
+                    material->getName().c_str_safe(), (uint8_t)material->getFeatureLevel());
+
+            primitives[primitiveIndex].setMaterialInstance(mi);
+            AttributeBitset required = material->getRequiredAttributes();
             AttributeBitset declared = primitives[primitiveIndex].getEnabledAttributes();
             if (UTILS_UNLIKELY((declared & required) != required)) {
                 slog.w << "[instance=" << instance.asValue() << ", primitive @ " << primitiveIndex

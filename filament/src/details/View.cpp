@@ -32,7 +32,7 @@
 #include <filament/TextureSampler.h>
 #include <filament/View.h>
 
-#include <private/filament/SibGenerator.h>
+#include <private/filament/SibStructs.h>
 #include <private/filament/UibStructs.h>
 
 #include <utils/Profiler.h>
@@ -658,7 +658,7 @@ void FView::prepareCamera(const CameraInfo& cameraInfo) const noexcept {
 void FView::prepareViewport(const filament::Viewport& viewport,
         uint32_t xoffset, uint32_t yoffset) const noexcept {
     SYSTRACE_CALL();
-    // TODO: we should pass viewport.{left|bottom} to the backend so it can offset the
+    // TODO: we should pass viewport.{left|bottom} to the backend, so it can offset the
     //       scissor properly.
     mPerViewUniforms.prepareViewport(viewport, xoffset, yoffset);
 }
