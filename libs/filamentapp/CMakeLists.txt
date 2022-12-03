@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 project(filamentapp C ASM)
 
-if (FILAMENT_SKIP_SAMPLES)
-    return()
-endif()
-
 set(TARGET filamentapp)
 set(PUBLIC_HDR_DIR include)
 

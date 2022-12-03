@@ -17,7 +17,7 @@ option(FILAMENT_USE_SWIFTSHADER "Compile Filament against SwiftShader" OFF)
 
 option(FILAMENT_ENABLE_LTO "Enable link-time optimizations if supported by the compiler" OFF)
 
-option(FILAMENT_SKIP_SAMPLES "Don't build samples" OFF)
+option(FILAMENT_SKIP_SAMPLES "Don't build samples" ON)
 
 option(FILAMENT_SUPPORTS_XCB "Include XCB support in Linux builds" ON)
 
@@ -311,10 +311,6 @@ if (ANDROID)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Werror=unguarded-availability")
 endif()
 
-if (CYGWIN)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
-endif()
-
 if (MSVC)
     # Since the "secure" replacements that MSVC suggests are not portable, disable
     # the deprecation warnings. Also disable warnings about use of POSIX functions (i.e. "unlink").
@@ -343,24 +339,6 @@ if (NOT MSVC AND NOT IOS)
 
     # These aren't compatible with -fembed-bitcode (and seem to have no effect on Apple platforms anyway)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ffunction-sections -fdata-sections")
-endif()
-
-# On Android RELEASE builds, we disable exceptions and RTTI to save some space (about 75 KiB
-# saved by -fno-exception and 10 KiB saved by -fno-rtti).
-if (ANDROID OR IOS OR WEBGL)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti")
-
-    if (ANDROID OR WEBGL)
-        # Omitting unwind info prevents the generation of readable stack traces in crash reports on iOS
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-unwind-tables -fno-asynchronous-unwind-tables")
-    endif()
-endif()
-
-# With WebGL, we disable RTTI even for debug builds because we pass emscripten::val back and forth
-# between C++ and JavaScript in order to efficiently access typed arrays, which are unbound.
-# NOTE: This is not documented in emscripten so we should consider a different approach.
-if (WEBGL)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-rtti")
 endif()
 
 if (WEBGL_PTHREADS)
@@ -674,7 +652,6 @@ add_subdirectory(${EXTERNAL}/meshoptimizer/tnt)
 add_subdirectory(${EXTERNAL}/cgltf/tnt)
 add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/jsmn/tnt)
-add_subdirectory(${EXTERNAL}/stb/tnt)
 add_subdirectory(${EXTERNAL}/getopt)
 
 if (FILAMENT_BUILD_FILAMAT OR IS_HOST_PLATFORM)
@@ -698,11 +675,6 @@ endif()
 
 set(FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
 
-if (WEBGL)
-    add_subdirectory(web/filament-js)
-    add_subdirectory(web/samples)
-endif()
-
 if (IS_HOST_PLATFORM)
     if (FILAMENT_SUPPORTS_OPENGL)
         add_subdirectory(${LIBRARIES}/bluegl)
@@ -714,10 +686,7 @@ if (IS_HOST_PLATFORM)
 
     add_subdirectory(${FILAMENT}/samples)
 
-    add_subdirectory(${EXTERNAL}/libassimp/tnt)
-    add_subdirectory(${EXTERNAL}/libpng/tnt)
     add_subdirectory(${EXTERNAL}/libsdl2/tnt)
-    add_subdirectory(${EXTERNAL}/libz/tnt)
     add_subdirectory(${EXTERNAL}/tinyexr/tnt)
 
     add_subdirectory(${TOOLS}/cmgen)
