@@ -469,7 +469,7 @@ if (FILAMENT_SUPPORTS_VULKAN)
 endif()
 if (FILAMENT_SUPPORTS_METAL)
     set(MATC_API_FLAGS ${MATC_API_FLAGS} -a metal)
-    set(MATC_OPT_FLAGS -gd) # material optimizations causes rendering artifacts on METAL 
+    set(MATC_OPT_FLAGS -g) # material optimizations causes rendering artifacts on METAL
 endif()
 
 # Disable optimizations and enable debug info (preserves names in SPIR-V)
