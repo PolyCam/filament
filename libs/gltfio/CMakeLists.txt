@@ -161,7 +161,7 @@ target_include_directories(gltfio_core PUBLIC ${PUBLIC_HDR_DIR})
 set_target_properties(gltfio_core PROPERTIES FOLDER Libs)
 
 target_compile_definitions(gltfio_core PUBLIC -DGLTFIO_DRACO_SUPPORTED=1)
-target_link_libraries(gltfio_core PUBLIC dracodec meshoptimizer)
+target_link_libraries(gltfio_core PUBLIC meshoptimizer)
 
 if (WEBGL_PTHREADS)
     target_compile_definitions(gltfio_core PUBLIC -DFILAMENT_WASM_THREADS)
@@ -190,6 +190,13 @@ if (NOT WEBGL AND NOT ANDROID AND NOT IOS)
     install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
 
 endif()
+
+# ==================================================================================================
+# Dependencies
+# ==================================================================================================
+
+find_package(draco CONFIG REQUIRED)
+target_link_libraries(gltfio_core PUBLIC draco::draco)
 
 # ==================================================================================================
 # Installation

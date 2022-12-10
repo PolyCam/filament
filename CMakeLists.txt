@@ -651,7 +651,6 @@ add_subdirectory(${EXTERNAL}/smol-v/tnt)
 add_subdirectory(${EXTERNAL}/benchmark/tnt)
 add_subdirectory(${EXTERNAL}/meshoptimizer/tnt)
 add_subdirectory(${EXTERNAL}/cgltf/tnt)
-add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/jsmn/tnt)
 add_subdirectory(${EXTERNAL}/getopt)
 
