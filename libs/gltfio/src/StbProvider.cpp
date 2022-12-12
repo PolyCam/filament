@@ -25,6 +25,10 @@
 #include <filament/Engine.h>
 #include <filament/Texture.h>
 
+#include <image/LinearImage.h>
+#include <image/ColorTransform.h>
+#include <image/ImageSampler.h>
+
 #include <stb_image.h>
 
 using namespace filament;
@@ -38,7 +42,7 @@ namespace filament::gltfio {
 
 class StbProvider final : public TextureProvider {
 public:
-    StbProvider(Engine* engine);
+    StbProvider(Engine* engine, float scaleDownFactor);
     ~StbProvider();
 
     Texture* pushTexture(const uint8_t* data, size_t byteCount,
@@ -63,11 +67,13 @@ private:
 
     struct TextureInfo {
         Texture* texture;
+        bool resized;
         TextureState state;
         atomic<intptr_t> decodedTexelsBaseMipmap;
         vector<uint8_t> sourceBuffer;
         JobSystem::Job*  decoderJob;
     };
+    static void decode(TextureInfo &info);
 
     // Declare some sentinel values for the "decodedTexelsBaseMipmap" field.
     // Note that the "state" field can be modified only on the foreground thread.
@@ -84,7 +90,14 @@ private:
     std::string mRecentPushMessage;
     std::string mRecentPopMessage;
     Engine* const mEngine;
+    const float mScaleDownFactor;
 };
+
+static int scaleDownDimension(int dimension, float scaleDownFactor) {
+    assert_invariant(dimension > 0);
+    const auto scaledDimension = std::max(1, static_cast<int>(std::round(static_cast<float>(dimension) / scaleDownFactor)));
+    return (scaledDimension);
+}
 
 Texture* StbProvider::pushTexture(const uint8_t* data, size_t byteCount,
             const char* mimeType, TextureFlags flags) {
@@ -93,6 +106,8 @@ Texture* StbProvider::pushTexture(const uint8_t* data, size_t byteCount,
         mRecentPushMessage = std::string("Unable to parse texture: ") + stbi_failure_reason();
         return nullptr;
     }
+    width = scaleDownDimension(width, mScaleDownFactor);
+    height = scaleDownDimension(height, mScaleDownFactor);
 
     using InternalFormat = Texture::InternalFormat;
 
@@ -126,19 +141,7 @@ Texture* StbProvider::pushTexture(const uint8_t* data, size_t byteCount,
     }
 
     JobSystem* js = &mEngine->getJobSystem();
-    info->decoderJob = jobs::createJob(*js, mDecoderRootJob, [this, info] {
-        auto& source = info->sourceBuffer;
-        int width, height, comp;
-
-        // Test asynchronous loading by uncommenting this line.
-        // std::this_thread::sleep_for(std::chrono::milliseconds(rand() % 10000));
-
-        stbi_uc* texels = stbi_load_from_memory(source.data(), source.size(),
-                &width, &height, &comp, 4);
-        source.clear();
-        source.shrink_to_fit();
-        info->decodedTexelsBaseMipmap.store(texels ? intptr_t(texels) : DECODING_ERROR);
-    });
+    info->decoderJob = jobs::createJob(*js, mDecoderRootJob, [this, info] { decode(*info); });
 
     js->runAndRetain(info->decoderJob);
     return texture;
@@ -229,23 +232,47 @@ const char* StbProvider::getPopMessage() const {
     return mRecentPopMessage.empty() ? nullptr : mRecentPopMessage.c_str();
 }
 
+void StbProvider::decode(TextureInfo& info) {
+    auto& source = info.sourceBuffer;
+    int width, height, comp;
+
+    std::uint8_t* texels = static_cast<std::uint8_t*>(stbi_load_from_memory(source.data(), source.size(), &width, &height, &comp, 4));
+    source.clear();
+    source.shrink_to_fit();
+    if (texels == nullptr) {
+        info.decodedTexelsBaseMipmap.store(DECODING_ERROR);
+        return;
+    }
+    info.resized = ((width != info.texture->getWidth()) || (height != info.texture->getHeight()));
+    if (info.resized) {
+        if (image::canSimpleScaleDown(width, height, info.texture->getWidth(), info.texture->getHeight())) {
+            auto scaled_down_texels = image::simpleScaleDownRgba(texels, width, height, width * sizeof(std::uint8_t) * 4u, info.texture->getWidth(),
+                                                                 info.texture->getHeight(), info.texture->getWidth() * sizeof(std::uint8_t) * 4u);
+            stbi_image_free(texels);
+            texels = scaled_down_texels.release();
+        } else {
+            auto linearImage = image::toLinearWithAlpha<std::uint8_t>(width, height, width * sizeof(std::uint8_t) * 4u, texels);
+            stbi_image_free(texels);
+            linearImage = image::resampleImage(linearImage, info.texture->getWidth(), info.texture->getHeight());
+            auto scaled_down_texels = image::fromLinearTosRGB<std::uint8_t, 4>(linearImage);
+            texels = scaled_down_texels.release();
+        }
+    }
+    info.decodedTexelsBaseMipmap.store(intptr_t(texels));
+}
+
 void StbProvider::decodeSingleTexture() {
     assert_invariant(!UTILS_HAS_THREADING);
     for (auto& info : mTextures) {
         if (info->state == TextureState::DECODING) {
-            auto& source = info->sourceBuffer;
-            int width, height, comp;
-            stbi_uc* texels = stbi_load_from_memory(source.data(), source.size(),
-                    &width, &height, &comp, 4);
-            source.clear();
-            source.shrink_to_fit();
-            info->decodedTexelsBaseMipmap.store(texels ? intptr_t(texels) : DECODING_ERROR);
+            decode(*info);
             break;
         }
     }
 }
 
-StbProvider::StbProvider(Engine* engine) : mEngine(engine) {
+StbProvider::StbProvider(Engine* engine, float scaleDownFactor) : mEngine(engine), mScaleDownFactor(scaleDownFactor) {
+    assert_invariant(scaleDownFactor >= 1.0f);
     mDecoderRootJob = mEngine->getJobSystem().createJob();
 #ifndef NDEBUG
     slog.i << "Texture Decoder has "
@@ -259,8 +286,8 @@ StbProvider::~StbProvider() {
     mEngine->getJobSystem().release(mDecoderRootJob);
 }
 
-TextureProvider* createStbProvider(Engine* engine) {
-    return new StbProvider(engine);
+TextureProvider* createStbProvider(Engine* engine, float scaleDownFactor) {
+    return new StbProvider(engine, scaleDownFactor);
 }
 
 } // namespace filament::gltfio
