@@ -20,6 +20,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
+
 #include <utils/compiler.h>
 #include <utils/BitmaskEnum.h>
 
@@ -170,9 +172,8 @@ public:
 /**
  * Creates a simple decoder based on stb_image that can handle "image/png" and "image/jpeg".
  * This works only if your build configuration includes STB.
- * scaleDownFactor should be 1.0f and higher, for example scaleDownFactor of 4.0f to scale 1024x1024 to 256x256.
  */
-TextureProvider* createStbProvider(filament::Engine* engine, float scaleDownFactor = 1.0f);
+TextureProvider* createStbProvider(filament::Engine* engine, const std::optional<unsigned int> &maxTextureSize = std::optional<uint32_t>());
 
 /**
  * Creates a decoder that can handle certain types of "image/ktx2" content as specified in
