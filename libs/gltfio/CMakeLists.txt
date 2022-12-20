@@ -152,6 +152,8 @@ set_target_properties(uberarchive PROPERTIES FOLDER Libs)
 # Build the "core" library (no filamat)
 # ==================================================================================================
 
+find_package(stb CONFIG REQUIRED)
+
 include_directories(${PUBLIC_HDR_DIR} ${RESOURCE_DIR})
 link_libraries(math utils filament cgltf stb ktxreader geometry tsl trie uberzlib)
 
