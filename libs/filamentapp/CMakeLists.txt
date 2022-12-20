@@ -13,6 +13,8 @@ set(MATERIAL_DIR  "${GENERATION_ROOT}/generated/material")
 # Headers, sources, libraries, and resources.
 # ==================================================================================================
 
+find_package(stb CONFIG REQUIRED)
+
 set(PUBLIC_HDRS
         include/filamentapp/Config.h
         include/filamentapp/Cube.h
