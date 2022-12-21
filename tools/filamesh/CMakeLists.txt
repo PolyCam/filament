@@ -18,9 +18,15 @@ add_executable(${TARGET} ${SRCS})
 
 target_link_libraries(${TARGET} PUBLIC math)
 target_link_libraries(${TARGET} PUBLIC utils)
-target_link_libraries(${TARGET} PUBLIC assimp)
 target_link_libraries(${TARGET} PRIVATE getopt filameshio meshoptimizer)
 set_target_properties(${TARGET} PROPERTIES FOLDER Tools)
+
+# ==================================================================================================
+# Dependencies
+# ==================================================================================================
+
+find_package(assimp CONFIG REQUIRED)
+target_link_libraries(${TARGET} PUBLIC assimp::assimp)
 
 # ==================================================================================================
 # Compile options and optimizations
