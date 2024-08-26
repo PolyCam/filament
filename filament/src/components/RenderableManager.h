@@ -26,7 +26,7 @@
 
 #include <backend/Handle.h>
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/RenderableManager.h>
 
 #include <private/filament/UibStructs.h>
@@ -95,7 +95,7 @@ public:
 
     void destroy(utils::Entity e) noexcept;
 
-    inline void setAxisAlignedBoundingBox(Instance instance, const Box& aabb) noexcept;
+    inline void setAxisAlignedBoundingBox(Instance instance, const math::Box& aabb) noexcept;
 
     inline void setLayerMask(Instance instance, uint8_t select, uint8_t values) noexcept;
 
@@ -132,8 +132,8 @@ public:
     inline bool isCullingEnabled(Instance instance) const noexcept;
 
 
-    inline Box const& getAABB(Instance instance) const noexcept;
-    inline Box const& getAxisAlignedBoundingBox(Instance instance) const noexcept { return getAABB(instance); }
+    inline math::Box const& getAABB(Instance instance) const noexcept;
+    inline math::Box const& getAxisAlignedBoundingBox(Instance instance) const noexcept { return getAABB(instance); }
     inline Visibility getVisibility(Instance instance) const noexcept;
     inline uint8_t getLayerMask(Instance instance) const noexcept;
     inline uint8_t getPriority(Instance instance) const noexcept;
@@ -210,7 +210,7 @@ private:
     };
 
     using Base = utils::SingleInstanceComponentManager<
-            Box,                             // AABB
+            math::Box,                       // AABB
             uint8_t,                         // LAYERS
             MorphWeights,                    // MORPH_WEIGHTS
             uint8_t,                         // CHANNELS
@@ -260,7 +260,7 @@ private:
 
 FILAMENT_DOWNCAST(RenderableManager)
 
-void FRenderableManager::setAxisAlignedBoundingBox(Instance instance, const Box& aabb) noexcept {
+void FRenderableManager::setAxisAlignedBoundingBox(Instance instance, const math::Box& aabb) noexcept {
     if (instance) {
         mManager[instance].aabb = aabb;
     }
@@ -369,7 +369,7 @@ uint16_t FRenderableManager::getInstanceCount(Instance instance) const noexcept 
     return mManager[instance].instanceCount;
 }
 
-Box const& FRenderableManager::getAABB(Instance instance) const noexcept {
+math::Box const& FRenderableManager::getAABB(Instance instance) const noexcept {
     return mManager[instance].aabb;
 }
 

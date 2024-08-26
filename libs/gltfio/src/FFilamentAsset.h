@@ -101,7 +101,7 @@ struct TextureSlot {
 struct Primitive {
     VertexBuffer* vertices = nullptr;
     IndexBuffer* indices = nullptr;
-    Aabb aabb; // object-space bounding box
+    math::Aabb aabb; // object-space bounding box
     UvMap uvmap; // mapping from each glTF UV set to either UV0 or UV1 (8 bytes)
     MorphTargetBuffer* targets = nullptr;
 };
@@ -169,7 +169,7 @@ struct FFilamentAsset : public FilamentAsset {
         return mResourceUris.data();
     }
 
-    Aabb getBoundingBox() const noexcept {
+    math::Aabb getBoundingBox() const noexcept {
         return mBoundingBox;
     }
 
@@ -252,7 +252,7 @@ struct FFilamentAsset : public FilamentAsset {
     std::vector<MorphTargetBuffer*> mMorphTargetBuffers;
     utils::FixedCapacityVector<Skin> mSkins;
     utils::FixedCapacityVector<utils::CString> mScenes;
-    Aabb mBoundingBox;
+    math::Aabb mBoundingBox;
     utils::Entity mRoot;
     std::vector<FFilamentInstance*> mInstances;
     Wireframe* mWireframe = nullptr;

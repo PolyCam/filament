@@ -110,10 +110,10 @@ public:
         math::float2 vsNearFar{};
 
         // World-space shadow-casters volume
-        Aabb wsShadowCastersVolume;
+        math::Aabb wsShadowCastersVolume;
 
         // World-space shadow-receivers volume
-        Aabb wsShadowReceiversVolume;
+        math::Aabb wsShadowReceiversVolume;
 
         uint8_t visibleLayers;
     };
@@ -232,7 +232,7 @@ private:
             const math::mat4f& projectionViewInverse, math::float2 csNearFar = { -1.0f, 1.0f }) noexcept;
 
     static inline math::float2 computeNearFar(math::mat4f const& view,
-            Aabb const& wsShadowCastersVolume) noexcept;
+            math::Aabb const& wsShadowCastersVolume) noexcept;
 
     static inline math::float2 computeNearFar(math::mat4f const& view,
             math::float3 const* wsVertices, size_t count) noexcept;
@@ -244,14 +244,14 @@ private:
     static void visitScene(FScene const& scene, uint32_t visibleLayers,
             Casters casters, Receivers receivers) noexcept;
 
-    static inline Aabb compute2DBounds(const math::mat4f& lightView,
+    static inline math::Aabb compute2DBounds(const math::mat4f& lightView,
             math::float3 const* wsVertices, size_t count) noexcept;
 
-    static inline Aabb compute2DBounds(const math::mat4f& lightView,
+    static inline math::Aabb compute2DBounds(const math::mat4f& lightView,
             math::float4 const& sphere) noexcept;
 
-    static inline void intersectWithShadowCasters(Aabb& lightFrustum, const math::mat4f& lightView,
-            Aabb const& wsShadowCastersVolume) noexcept;
+    static inline void intersectWithShadowCasters(math::Aabb& lightFrustum, const math::mat4f& lightView,
+            math::Aabb const& wsShadowCastersVolume) noexcept;
 
     static inline math::float2 computeNearFarOfWarpSpace(math::mat4f const& lightView,
             math::float3 const* wsVertices, size_t count) noexcept;
@@ -272,7 +272,7 @@ private:
             FrustumBoxIntersection& outVertices,
             Frustum const& wsFrustum,
             math::float3 const* wsFrustumCorners,
-            Aabb const& wsBox);
+            math::Aabb const& wsBox);
 
     static math::mat4f warpFrustum(float n, float f) noexcept;
 

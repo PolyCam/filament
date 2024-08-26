@@ -23,7 +23,7 @@
 #include "FNodeManager.h"
 #include "GltfEnums.h"
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/BufferObject.h>
 #include <filament/Camera.h>
 #include <filament/Engine.h>

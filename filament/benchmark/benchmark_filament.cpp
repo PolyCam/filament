@@ -19,7 +19,7 @@
 #include <benchmark/benchmark.h>
 
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/Frustum.h>
 #include "Culler.h"
 

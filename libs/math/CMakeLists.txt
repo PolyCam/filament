@@ -32,7 +32,7 @@ set(PUBLIC_HDRS
         include/math/vec4.h
 )
 
-set(SRCS src/dummy.cpp)
+set(SRCS src/Box.cpp)
 
 # ==================================================================================================
 # Include and target definitions

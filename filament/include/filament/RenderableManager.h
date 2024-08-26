@@ -17,7 +17,7 @@
 #ifndef TNT_FILAMENT_RENDERABLEMANAGER_H
 #define TNT_FILAMENT_RENDERABLEMANAGER_H
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/FilamentAPI.h>
 #include <filament/MaterialEnums.h>
 #include <filament/MorphTargetBuffer.h>
@@ -183,7 +183,7 @@ public:
          *
          * \see computeAABB()
          */
-        Builder& boundingBox(const Box& axisAlignedBoundingBox) noexcept;
+        Builder& boundingBox(const math::Box& axisAlignedBoundingBox) noexcept;
 
         /**
          * Sets bits in a visibility mask. By default, this is 0x1.
@@ -443,7 +443,7 @@ public:
      * \see Builder::boundingBox()
      * \see RenderableManager::getAxisAlignedBoundingBox()
      */
-    void setAxisAlignedBoundingBox(Instance instance, const Box& aabb) noexcept;
+    void setAxisAlignedBoundingBox(Instance instance, const math::Box& aabb) noexcept;
 
     /**
      * Changes the visibility bits.
@@ -582,7 +582,7 @@ public:
      * \see Builder::boundingBox()
      * \see RenderableManager::setAxisAlignedBoundingBox()
      */
-    const Box& getAxisAlignedBoundingBox(Instance instance) const noexcept;
+    const math::Box& getAxisAlignedBoundingBox(Instance instance) const noexcept;
 
     /**
      * Get the visibility bits.
@@ -685,7 +685,7 @@ public:
     template<typename VECTOR, typename INDEX,
             typename = typename is_supported_vector_type<VECTOR>::type,
             typename = typename is_supported_index_type<INDEX>::type>
-    static Box computeAABB(VECTOR const* vertices, INDEX const* indices, size_t count,
+    static math::Box computeAABB(VECTOR const* vertices, INDEX const* indices, size_t count,
             size_t stride = sizeof(VECTOR)) noexcept;
 };
 
@@ -702,7 +702,7 @@ void RenderableManager::setMorphTargetBufferAt(Instance instance, uint8_t level,
 }
 
 template<typename VECTOR, typename INDEX, typename, typename>
-Box RenderableManager::computeAABB(VECTOR const* vertices, INDEX const* indices, size_t count,
+math::Box RenderableManager::computeAABB(VECTOR const* vertices, INDEX const* indices, size_t count,
         size_t stride) noexcept {
     math::float3 bmin(std::numeric_limits<float>::max());
     math::float3 bmax(std::numeric_limits<float>::lowest());
@@ -713,7 +713,7 @@ Box RenderableManager::computeAABB(VECTOR const* vertices, INDEX const* indices,
         bmin = min(bmin, v);
         bmax = max(bmax, v);
     }
-    return Box().set(bmin, bmax);
+    return math::Box().set(bmin, bmax);
 }
 
 } // namespace filament

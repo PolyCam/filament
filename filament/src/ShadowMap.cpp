@@ -146,7 +146,7 @@ ShadowMap::ShaderParameters ShadowMap::updateDirectional(FEngine& engine,
     // Compute scene-dependent values shared across all cascades
     ShadowMap::updateSceneInfoDirectional(MvAtOrigin, scene, sceneInfo);
 
-    const Aabb wsShadowCastersVolume = sceneInfo.wsShadowCastersVolume;
+    const math::Aabb wsShadowCastersVolume = sceneInfo.wsShadowCastersVolume;
     const Aabb wsShadowReceiversVolume = sceneInfo.wsShadowReceiversVolume;
     if (wsShadowCastersVolume.isEmpty() || wsShadowReceiversVolume.isEmpty()) {
         mHasVisibleShadows = false;
@@ -695,8 +695,8 @@ mat4f ShadowMap::directionalLightFrustum(float near, float far) noexcept {
 }
 
 float2 ShadowMap::computeNearFar(const mat4f& view,
-        Aabb const& wsShadowCastersVolume) noexcept {
-    const Aabb::Corners wsSceneCastersCorners = wsShadowCastersVolume.getCorners();
+        math::Aabb const& wsShadowCastersVolume) noexcept {
+    const math::Aabb::Corners wsSceneCastersCorners = wsShadowCastersVolume.getCorners();
     return computeNearFar(view, wsSceneCastersCorners.data(), wsSceneCastersCorners.size());
 }
 
@@ -760,7 +760,7 @@ Aabb ShadowMap::compute2DBounds(const mat4f& lightView, float4 const& sphere) no
 }
 
 void ShadowMap::intersectWithShadowCasters(Aabb& UTILS_RESTRICT lightFrustum,
-        mat4f const& lightView, Aabb const& wsShadowCastersVolume) noexcept {
+        mat4f const& lightView, math::Aabb const& wsShadowCastersVolume) noexcept {
 
     // construct the Focus transform (scale + offset)
     const float2 s = 2.0f / float2(lightFrustum.max.xy - lightFrustum.min.xy);

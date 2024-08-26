@@ -67,7 +67,7 @@ public:
      */
     static bool intersects(
             Frustum const& frustum,
-            Box const& box) noexcept;
+            math::Box const& box) noexcept;
 
     /*
      * returns whether an sphere intersects with the frustum

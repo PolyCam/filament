@@ -17,7 +17,7 @@
 #ifndef GLTFIO_FILAMENTASSET_H
 #define GLTFIO_FILAMENTASSET_H
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/TextureSampler.h>
 
 #include <gltfio/NodeManager.h>
@@ -169,7 +169,7 @@ public:
      * This does not return a bounding box over all FilamentInstance, it's just a straightforward
      * AAAB that can be determined at load time from the asset data.
      */
-    filament::Aabb getBoundingBox() const noexcept;
+    filament::math::Aabb getBoundingBox() const noexcept;
 
     /** Gets the NameComponentManager label for the given entity, if it exists. */
     const char* getName(Entity) const noexcept;

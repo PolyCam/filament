@@ -28,7 +28,7 @@
 
 #include "BufferPoolAllocator.h"
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/Scene.h>
 
 #include <utils/compiler.h>

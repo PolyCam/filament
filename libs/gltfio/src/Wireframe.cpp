@@ -17,7 +17,7 @@
 #include "Wireframe.h"
 #include "FFilamentAsset.h"
 
-#include <filament/Box.h>
+#include <math/Box.h>
 #include <filament/Engine.h>
 #include <filament/VertexBuffer.h>
 #include <filament/RenderableManager.h>
@@ -72,7 +72,7 @@ Wireframe::Wireframe(FFilamentAsset* asset) : mAsset(asset) {
         auto transformable = tm.getInstance(node);
         auto renderable = rm.getInstance(node);
         if (renderable) {
-            Box aabb = rm.getAxisAlignedBoundingBox(renderable);
+            math::Box aabb = rm.getAxisAlignedBoundingBox(renderable);
             float3 minpt = aabb.getMin();
             float3 maxpt = aabb.getMax();
             mat4f worldTransform = tm.getWorldTransform(transformable);

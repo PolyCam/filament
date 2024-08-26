@@ -332,7 +332,7 @@ const char* const* FilamentAsset::getResourceUris() const noexcept {
     return downcast(this)->getResourceUris();
 }
 
-filament::Aabb FilamentAsset::getBoundingBox() const noexcept {
+filament::math::Aabb FilamentAsset::getBoundingBox() const noexcept {
     return downcast(this)->getBoundingBox();
 }
 

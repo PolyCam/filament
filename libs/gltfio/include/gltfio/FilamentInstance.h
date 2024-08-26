@@ -20,7 +20,7 @@
 #include <utils/compiler.h>
 #include <utils/Entity.h>
 
-#include <filament/Box.h>
+#include <math/Box.h>
 
 namespace filament {
 class MaterialInstance;
@@ -142,7 +142,7 @@ public:
      *
      * If recomputeBoundingBoxes() has been called, then this returns the recomputed AABB.
      */
-    Aabb getBoundingBox() const noexcept;
+    math::Aabb getBoundingBox() const noexcept;
 
     /** Gets all material instances. These are already bound to renderables. */
     const MaterialInstance* const* getMaterialInstances() const noexcept;

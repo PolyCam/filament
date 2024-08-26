@@ -16,7 +16,7 @@
 
 #include "Culler.h"
 
-#include <filament/Box.h>
+#include <math/Box.h>
 
 #include <math/fast.h>
 

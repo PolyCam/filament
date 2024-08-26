@@ -12,7 +12,6 @@ set(MATERIAL_DIR "${GENERATION_ROOT}/generated/material")
 # ==================================================================================================
 
 set(PUBLIC_HDRS
-        include/filament/Box.h
         include/filament/BufferObject.h
         include/filament/Camera.h
         include/filament/Color.h
@@ -49,7 +48,6 @@ set(PUBLIC_HDRS
 
 set(SRCS
         src/AtlasAllocator.cpp
-        src/Box.cpp
         src/BufferObject.cpp
         src/Camera.cpp
         src/Color.cpp

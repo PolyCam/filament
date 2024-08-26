@@ -16,22 +16,20 @@
 
 //! \file
 
-#ifndef TNT_FILAMENT_BOX_H
-#define TNT_FILAMENT_BOX_H
-
-#include <utils/compiler.h>
+#ifndef TNT_MATH_BOX_H
+#define TNT_MATH_BOX_H
 
 #include <limits>
 
 #include <math/mat4.h>
 #include <math/vec3.h>
 
-namespace filament {
+namespace filament::math {
 
 /**
  * An axis aligned 3D box represented by its center and half-extent.
  */
-class UTILS_PUBLIC Box {
+class Box {
 public:
     /** Center of the 3D box */
     math::float3 center = {};
@@ -125,7 +123,7 @@ public:
 /**
  * An axis aligned box represented by its min and max coordinates
  */
-struct UTILS_PUBLIC Aabb {
+struct Aabb {
 
     /** min coordinates */
     math::float3 min = std::numeric_limits<float>::max();

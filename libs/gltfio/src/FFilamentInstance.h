@@ -105,7 +105,7 @@ struct FFilamentInstance : public FilamentInstance {
     // considered using the ECS for this, but we need Node => Entity, not the other way around.
     utils::FixedCapacityVector<utils::Entity> mNodeMap;
 
-    Aabb mBoundingBox;
+    math::Aabb mBoundingBox;
 
     utils::FixedCapacityVector<MaterialInstance*> mMaterialInstances;
 

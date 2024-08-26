@@ -28,7 +28,10 @@
 
 namespace filament {
 
+namespace math {
 class Box;
+}
+
 class Culler;
 
 /**
@@ -92,7 +95,7 @@ public:
      * a box that doesn't intersect the frustum might be reported as though it does. However,
      * a box that does intersect the frustum is always reported correctly (true).
      */
-    bool intersects(const Box& box) const noexcept;
+    bool intersects(const math::Box& box) const noexcept;
 
     /**
      * Returns whether a sphere intersects the frustum (i.e. is visible)
