@@ -345,9 +345,11 @@ void OpenGLContext::setDefaultState() noexcept {
 #endif
 
 #if defined(GL_EXT_clip_control) || defined(GL_ARB_clip_control) || defined(GL_VERSION_4_5)
+#ifndef __EMSCRIPTEN__
     if (ext.EXT_clip_control) {
         glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
     }
+#endif
 #endif
 }
 
