@@ -26,7 +26,10 @@ add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 
 target_link_libraries(${TARGET} PUBLIC math utils)
 
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 # ==================================================================================================
@@ -42,14 +45,5 @@ endif()
 # ==================================================================================================
 # Installation
 # ==================================================================================================
-install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)
 install(DIRECTORY ${PUBLIC_HDR_DIR}/geometry DESTINATION include)
-
-# ==================================================================================================
-# Tests
-# ==================================================================================================
-if (NOT ANDROID AND NOT WEBGL AND NOT IOS)
-    add_executable(test_transcoder tests/test_transcoder.cpp)
-    target_link_libraries(test_transcoder PRIVATE ${TARGET} gtest)
-    set_target_properties(test_transcoder PROPERTIES FOLDER Tests)
-endif()

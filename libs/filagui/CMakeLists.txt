@@ -26,10 +26,6 @@ set(SRCS
 # Compile material files (mat) into headers (inc)
 # ==================================================================================================
 
-if (CMAKE_CROSSCOMPILING)
-    include(${IMPORT_EXECUTABLES})
-endif()
-
 set(MATERIAL_SRCS
         src/materials/uiBlit.mat)
 
@@ -82,7 +78,10 @@ add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS} ${RESGEN_SOURCE})
 
 target_link_libraries(${TARGET} PUBLIC imgui filament)
 
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 # ==================================================================================================
@@ -94,3 +93,9 @@ if (NOT MSVC)
             $<$<CONFIG:Release>:-ffast-math>
     )
 endif()
+
+# ==================================================================================================
+# Installation
+# ==================================================================================================
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)
+install(DIRECTORY ${PUBLIC_HDR_DIR}/filagui DESTINATION include)

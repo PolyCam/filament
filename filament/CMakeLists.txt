@@ -288,10 +288,6 @@ add_definitions(
 # Generate all .filamat: default material, skyboxes, and post-process
 # ==================================================================================================
 
-if (CMAKE_CROSSCOMPILING)
-    include(${IMPORT_EXECUTABLES})
-endif()
-
 set(MATERIAL_BINS)
 file(MAKE_DIRECTORY ${MATERIAL_DIR})
 
@@ -524,7 +520,11 @@ include_directories(src)
 add_library(${TARGET} STATIC ${PRIVATE_HDRS} ${PUBLIC_HDRS} ${SRCS} ${DATA_BINS})
 
 # specify where the public headers of this library are
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET}
+PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/include>
+)
 
 # add this subproject to the Filament folder
 set_target_properties(${TARGET} PROPERTIES FOLDER Filament)
@@ -606,7 +606,7 @@ target_link_libraries(${TARGET} PRIVATE
 # Installation
 # ==================================================================================================
 set(INSTALL_TYPE ARCHIVE)
-install(TARGETS ${TARGET} ${INSTALL_TYPE} DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} EXPORT filamentTargets ${INSTALL_TYPE} DESTINATION lib)
 install(DIRECTORY ${PUBLIC_HDR_DIR}/filament DESTINATION include)
 install(FILES "README.md" DESTINATION .)
 install(FILES "../LICENSE" DESTINATION .)
@@ -615,5 +615,4 @@ install(FILES "../LICENSE" DESTINATION .)
 # Sub-projects
 # ==================================================================================================
 add_subdirectory(backend)
-add_subdirectory(test)
 add_subdirectory(benchmark)

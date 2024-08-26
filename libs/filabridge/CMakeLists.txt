@@ -18,10 +18,11 @@ set(SRCS
 # ==================================================================================================
 # Include and target definitions
 # ==================================================================================================
-include_directories(${PUBLIC_HDR_DIR})
-
 add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 target_link_libraries(${TARGET} utils)
@@ -32,4 +33,4 @@ target_link_libraries(${TARGET} backend_headers)
 # Installation
 # ==================================================================================================
 install(DIRECTORY ${PUBLIC_HDR_DIR}/filament DESTINATION include)
-install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)

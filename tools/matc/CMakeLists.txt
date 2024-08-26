@@ -77,22 +77,3 @@ set_target_properties(${TARGET} PROPERTIES FOLDER Tools)
 # Installation
 # ==================================================================================================
 install(TARGETS ${TARGET} RUNTIME DESTINATION bin)
-
-# ==================================================================================================
-# Tests
-# ==================================================================================================
-project(test_matc)
-set(TARGET test_matc)
-set(SRCS
-    tests/test_matc.cpp
-    tests/test_includer.cpp
-    tests/TestMaterialCompiler.h
-    tests/test_compute_material.cpp
-    tests/MockConfig.cpp
-    tests/MockConfig.h)
-
-add_executable(${TARGET} ${SRCS})
-
-target_link_libraries(${TARGET} matlang gtest)
-
-set_target_properties(test_matc PROPERTIES FOLDER Tests)

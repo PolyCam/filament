@@ -33,7 +33,10 @@ add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
-target_link_libraries(${TARGET} PUBLIC image math png tinyexr utils z basis_encoder)
+find_package(PNG REQUIRED)
+include_directories(${PNG_INCLUDE_DIR})
+
+target_link_libraries(${TARGET} PUBLIC image math ${PNG_LIBRARIES} tinyexr utils z basis_encoder)
 if (WIN32)
     target_link_libraries(${TARGET} PRIVATE wsock32)
 endif()

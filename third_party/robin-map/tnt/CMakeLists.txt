@@ -17,14 +17,16 @@ set(PUBLIC_HDRS
 # ==================================================================================================
 # Include and target definitions
 # ==================================================================================================
-include_directories(${OUR_DIR}/tsl)
 
-add_library(${TARGET} INTERFACE)
-target_sources(${TARGET} INTERFACE ${PUBLIC_HDRS})
-target_include_directories(${TARGET} INTERFACE ${OUR_DIR})
+add_library(${TARGET} INTERFACE ${PUBLIC_HDRS})
+target_include_directories(${TARGET} INTERFACE
+    $<BUILD_INTERFACE:${OUR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER ThirdParty)
 
 # ==================================================================================================
 # Installation
 # ==================================================================================================
 install(FILES ${PUBLIC_HDRS} DESTINATION include/${TARGET})
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)

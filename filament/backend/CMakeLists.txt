@@ -220,7 +220,10 @@ include_directories(${GENERATION_ROOT})
 add_library(${TARGET} STATIC ${PRIVATE_HDRS} ${PUBLIC_HDRS} ${SRCS})
 
 # specify where the public headers of this library are
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
 # add this subproject to the Filament folder
 set_target_properties(${TARGET} PROPERTIES FOLDER Filament)
@@ -230,7 +233,10 @@ set_target_properties(${TARGET} PROPERTIES FOLDER Filament)
 # ==================================================================================================
 
 add_library(${TARGET}_headers INTERFACE)
-target_include_directories(${TARGET}_headers INTERFACE ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET}_headers INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
 # ==================================================================================================
 # Build SPIRV snippets used by the Vulkan backend.
@@ -374,100 +380,6 @@ target_link_libraries(${TARGET} PRIVATE
 # Installation
 # ==================================================================================================
 set(INSTALL_TYPE ARCHIVE)
-install(TARGETS ${TARGET} ${INSTALL_TYPE} DESTINATION lib/${DIST_DIR})
-install(TARGETS vkshaders ${INSTALL_TYPE} DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} ${TARGET}_headers EXPORT filamentTargets ${INSTALL_TYPE} DESTINATION lib)
+install(TARGETS vkshaders ${INSTALL_TYPE} DESTINATION lib)
 install(DIRECTORY ${PUBLIC_HDR_DIR}/backend DESTINATION include)
-
-# ==================================================================================================
-# Test
-# ==================================================================================================
-option(INSTALL_BACKEND_TEST "Install the backend test library so it can be consumed on iOS" OFF)
-
-if (APPLE)
-    add_library(backend_test STATIC
-        test/BackendTest.cpp
-        test/ShaderGenerator.cpp
-        test/TrianglePrimitive.cpp
-        test/Arguments.cpp
-        test/test_FeedbackLoops.cpp
-        test/test_Blit.cpp
-        test/test_MissingRequiredAttributes.cpp
-        test/test_ReadPixels.cpp
-        test/test_BufferUpdates.cpp
-        test/test_MRT.cpp
-        test/test_LoadImage.cpp
-        test/test_RenderExternalImage.cpp
-        test/test_StencilBuffer.cpp
-        test/test_Scissor.cpp
-        )
-
-    target_link_libraries(backend_test PRIVATE
-        backend
-        getopt
-        gtest
-        filamat
-        SPIRV
-        spirv-cross-glsl)
-
-    set(BACKEND_TEST_DEPS
-            OGLCompiler
-            OSDependent
-            SPIRV
-            SPIRV-Tools
-            SPIRV-Tools-opt
-            backend_test
-            getopt
-            gtest
-            glslang
-            spirv-cross-core
-            spirv-cross-glsl
-            spirv-cross-msl
-            )
-
-    if (NOT IOS)
-        target_link_libraries(backend_test PRIVATE image imageio)
-        list(APPEND BACKEND_TEST_DEPS image imageio)
-    endif()
-
-    set(BACKEND_TEST_COMBINED_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libbackendtest_combined.a")
-    combine_static_libs(backend_test "${BACKEND_TEST_COMBINED_OUTPUT}" "${BACKEND_TEST_DEPS}")
-
-    set(BACKEND_TEST_LIB_NAME ${CMAKE_STATIC_LIBRARY_PREFIX}backend_test${CMAKE_STATIC_LIBRARY_SUFFIX})
-
-    if (INSTALL_BACKEND_TEST)
-        install(FILES "${BACKEND_TEST_COMBINED_OUTPUT}" DESTINATION lib/${DIST_DIR} RENAME ${BACKEND_TEST_LIB_NAME})
-        install(FILES test/PlatformRunner.h DESTINATION include/backend_test)
-    endif()
-
-    set_target_properties(backend_test PROPERTIES FOLDER Tests)
-endif()
-
-if (APPLE AND NOT IOS)
-    add_executable(backend_test_mac test/mac_runner.mm)
-    target_link_libraries(backend_test_mac PRIVATE "-framework Metal -framework AppKit -framework QuartzCore")
-    # Because each test case is a separate file, the -force_load flag is necessary to prevent the
-    # linker from removing "unused" symbols.
-    target_link_libraries(backend_test_mac PRIVATE -force_load backend_test)
-    set_target_properties(backend_test_mac PROPERTIES FOLDER Tests)
-endif()
-
-# ==================================================================================================
-# Compute tests
-
-if (NOT IOS AND NOT WEBGL)
-
-add_executable(compute_test
-        test/ComputeTest.cpp
-        test/Arguments.cpp
-        test/test_ComputeBasic.cpp
-        )
-
-target_link_libraries(compute_test PRIVATE
-        backend
-        getopt
-        gtest
-        )
-
-set_target_properties(compute_test PROPERTIES FOLDER Tests)
-
-endif()

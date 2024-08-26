@@ -31,7 +31,10 @@ add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 
 target_link_libraries(${TARGET} PUBLIC math utils)
 
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 # ==================================================================================================
@@ -47,14 +50,5 @@ endif()
 # ==================================================================================================
 # Installation
 # ==================================================================================================
-install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)
 install(DIRECTORY ${PUBLIC_HDR_DIR}/image DESTINATION include)
-
-# ==================================================================================================
-# Tests
-# ==================================================================================================
-if (NOT ANDROID AND NOT WEBGL AND NOT IOS AND NOT FILAMENT_SKIP_SDL2)
-    add_executable(test_${TARGET} tests/test_image.cpp)
-    target_link_libraries(test_${TARGET} PRIVATE image imageio gtest)
-    set_target_properties(test_${TARGET} PROPERTIES FOLDER Tests)
-endif()

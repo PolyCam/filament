@@ -41,38 +41,20 @@ include_directories(${PUBLIC_HDR_DIR})
 
 add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 target_compile_options(${TARGET} PRIVATE ${OPTIMIZATION_FLAGS})
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 # ==================================================================================================
 # Installation
 # ==================================================================================================
-install(DIRECTORY ${PUBLIC_HDR_DIR}/math DESTINATION include)
-
-# ==================================================================================================
-# Tests
-# ==================================================================================================
-add_executable(test_${TARGET}
-        tests/test_fast.cpp
-        tests/test_half.cpp
-        tests/test_mat.cpp
-        tests/test_vec.cpp
-        tests/test_quat.cpp
+install(TARGETS ${TARGET}
+    EXPORT filamentTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
-target_link_libraries(test_${TARGET} PRIVATE math gtest)
-set_target_properties(test_${TARGET} PROPERTIES FOLDER Tests)
-
-# ==================================================================================================
-# Benchmarks
-# ==================================================================================================
-
-set(BENCHMARK_SRCS
-        benchmarks/benchmark_fast.cpp include/math/mathfwd.h)
-
-add_executable(benchmark_${TARGET} ${BENCHMARK_SRCS})
-
-target_compile_options(benchmark_${TARGET} PRIVATE ${OPTIMIZATION_FLAGS})
-
-target_link_libraries(benchmark_${TARGET} PRIVATE benchmark_main utils math)
-
-set_target_properties(benchmark_${TARGET} PROPERTIES FOLDER Benchmarks)
+install(DIRECTORY ${PUBLIC_HDR_DIR}/math DESTINATION include)

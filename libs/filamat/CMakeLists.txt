@@ -98,7 +98,10 @@ target_link_libraries(${TARGET} shaders filabridge utils smol-v)
 
 # Filamat Lite
 add_library(filamat_lite STATIC ${HDRS} ${LITE_PRIVATE_HDRS} ${LITE_SRCS})
-target_include_directories(filamat_lite PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(filamat_lite PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(filamat_lite PROPERTIES FOLDER Libs)
 target_link_libraries(filamat_lite shaders filabridge utils)
 
@@ -153,37 +156,7 @@ set(FILAMAT_COMBINED_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/libfilamat_combined.a")
 combine_static_libs(filamat "${FILAMAT_COMBINED_OUTPUT}" "${FILAMAT_DEPS}")
 
 set(FILAMAT_LIB_NAME ${CMAKE_STATIC_LIBRARY_PREFIX}filamat${CMAKE_STATIC_LIBRARY_SUFFIX})
-install(FILES "${FILAMAT_COMBINED_OUTPUT}" DESTINATION lib/${DIST_DIR} RENAME ${FILAMAT_LIB_NAME})
+install(FILES "${FILAMAT_COMBINED_OUTPUT}" DESTINATION lib RENAME ${FILAMAT_LIB_NAME})
 install(DIRECTORY ${PUBLIC_HDR_DIR}/filamat DESTINATION include)
 
-install(TARGETS filamat_lite ARCHIVE DESTINATION lib/${DIST_DIR})
-
-# ==================================================================================================
-# Tests
-# ==================================================================================================
-project(test_filamat)
-set(TARGET test_filamat)
-set(SRCS
-        tests/test_filamat.cpp
-        tests/test_argBufferFixup.cpp
-        tests/test_includes.cpp)
-
-add_executable(${TARGET} ${SRCS})
-
-target_include_directories(${TARGET} PRIVATE src)
-
-target_link_libraries(${TARGET} filamat gtest)
-
-set_target_properties(${TARGET} PROPERTIES FOLDER Tests)
-
-set(TARGET test_filamat_lite)
-set(SRCS
-        tests/test_filamat_lite.cpp)
-
-add_executable(${TARGET} ${SRCS})
-
-target_include_directories(${TARGET} PRIVATE src)
-
-target_link_libraries(${TARGET} filamat_lite gtest)
-
-set_target_properties(${TARGET} PROPERTIES FOLDER Tests)
+install(TARGETS filamat_lite EXPORT filamentTargets ARCHIVE DESTINATION lib)

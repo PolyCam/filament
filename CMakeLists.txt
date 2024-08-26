@@ -3,6 +3,18 @@
 # ==================================================================================================
 cmake_minimum_required(VERSION 3.19)
 
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED yes)
+
+if (IOS AND NOT CMAKE_SYSTEM_NAME STREQUAL "visionOS")
+    include(third_party/clang/iOS.cmake)
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "visionOS")
+    add_definitions(-DIOS)
+endif()
+
 # ==================================================================================================
 # Project declaration
 # ==================================================================================================
@@ -60,33 +72,6 @@ set(FILAMENT_METAL_HANDLE_ARENA_SIZE_IN_MB "8" CACHE STRING
 # ==================================================================================================
 if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.12")
     cmake_policy(SET CMP0074 NEW)
-endif()
-
-# ==================================================================================================
-# Support for ccache
-# ==================================================================================================
-find_program(CCACHE_PROGRAM ccache)
-if (CCACHE_PROGRAM)
-    set(C_LAUNCHER   "${CCACHE_PROGRAM}")
-    set(CXX_LAUNCHER "${CCACHE_PROGRAM}")
-
-    configure_file(build/launch-c.in   launch-c)
-    configure_file(build/launch-cxx.in launch-cxx)
-
-    execute_process(COMMAND chmod a+rx
-        "${CMAKE_BINARY_DIR}/launch-c"
-        "${CMAKE_BINARY_DIR}/launch-cxx"
-    )
-
-    if (CMAKE_GENERATOR STREQUAL "Xcode")
-        set(CMAKE_XCODE_ATTRIBUTE_CC         "${CMAKE_BINARY_DIR}/launch-c")
-        set(CMAKE_XCODE_ATTRIBUTE_CXX        "${CMAKE_BINARY_DIR}/launch-cxx")
-        set(CMAKE_XCODE_ATTRIBUTE_LD         "${CMAKE_BINARY_DIR}/launch-c")
-        set(CMAKE_XCODE_ATTRIBUTE_LDPLUSPLUS "${CMAKE_BINARY_DIR}/launch-cxx")
-    else()
-        set(CMAKE_C_COMPILER_LAUNCHER        "${CMAKE_BINARY_DIR}/launch-c")
-        set(CMAKE_CXX_COMPILER_LAUNCHER      "${CMAKE_BINARY_DIR}/launch-cxx")
-    endif()
 endif()
 
 # ==================================================================================================
@@ -311,10 +296,6 @@ if (ANDROID)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Werror=unguarded-availability")
 endif()
 
-if (CYGWIN)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions -fno-rtti")
-endif()
-
 if (MSVC)
     # Since the "secure" replacements that MSVC suggests are not portable, disable
     # the deprecation warnings. Also disable warnings about use of POSIX functions (i.e. "unlink").
@@ -343,24 +324,6 @@ if (NOT MSVC AND NOT IOS)
 
     # These aren't compatible with -fembed-bitcode (and seem to have no effect on Apple platforms anyway)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -ffunction-sections -fdata-sections")
-endif()
-
-# On Android RELEASE builds, we disable exceptions and RTTI to save some space (about 75 KiB
-# saved by -fno-exception and 10 KiB saved by -fno-rtti).
-if (ANDROID OR IOS OR WEBGL)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-exceptions -fno-rtti")
-
-    if (ANDROID OR WEBGL)
-        # Omitting unwind info prevents the generation of readable stack traces in crash reports on iOS
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fno-unwind-tables -fno-asynchronous-unwind-tables")
-    endif()
-endif()
-
-# With WebGL, we disable RTTI even for debug builds because we pass emscripten::val back and forth
-# between C++ and JavaScript in order to efficiently access typed arrays, which are unbound.
-# NOTE: This is not documented in emscripten so we should consider a different approach.
-if (WEBGL)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-rtti")
 endif()
 
 if (WEBGL_PTHREADS)
@@ -457,11 +420,7 @@ else()
 endif()
 
 # By default, link in matdbg for Desktop + Debug only since it pulls in filamat and a web server.
-if (CMAKE_BUILD_TYPE STREQUAL "Debug" AND IS_HOST_PLATFORM)
-    option(FILAMENT_ENABLE_MATDBG "Enable the material debugger" ON)
-else()
-    option(FILAMENT_ENABLE_MATDBG "Enable the material debugger" OFF)
-endif()
+option(FILAMENT_ENABLE_MATDBG "Enable the material debugger" OFF)
 
 # Only optimize materials in Release mode (so error message lines match the source code)
 if (CMAKE_BUILD_TYPE MATCHES Release)
@@ -491,6 +450,7 @@ if (FILAMENT_SUPPORTS_VULKAN)
 endif()
 if (FILAMENT_SUPPORTS_METAL)
     set(MATC_API_FLAGS ${MATC_API_FLAGS} -a metal)
+    set(MATC_OPT_FLAGS -g) # material optimizations causes rendering artifacts on METAL
 endif()
 
 # Disable optimizations and enable debug info (preserves names in SPIR-V)
@@ -582,10 +542,15 @@ endfunction()
 # ==================================================================================================
 # Configuration for CMAKE_CROSSCOMPILING.
 # ==================================================================================================
-if (WEBGL)
-    set(IMPORT_EXECUTABLES ${FILAMENT}/${IMPORT_EXECUTABLES_DIR}/ImportExecutables-Release.cmake)
-else()
-    set(IMPORT_EXECUTABLES ${FILAMENT}/${IMPORT_EXECUTABLES_DIR}/ImportExecutables-${CMAKE_BUILD_TYPE}.cmake)
+
+if(ANDROID OR WEBGL OR IOS)
+    message("configuring filament tools using host binaries")
+    foreach(NAME IN ITEMS matc resgen cmgen uberz mipgen glslminifier)
+        find_program(${NAME}_PATH ${NAME})
+        add_executable(${NAME} IMPORTED)
+        set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${${NAME}_PATH})
+        message("configured executable ${NAME} with path ${${NAME}_PATH}")
+    endforeach()
 endif()
 
 # ==================================================================================================
@@ -644,12 +609,9 @@ endfunction()
 # ==================================================================================================
 
 # Common to all platforms
-add_subdirectory(${EXTERNAL}/libgtest/tnt)
-add_subdirectory(${LIBRARIES}/camutils)
 add_subdirectory(${LIBRARIES}/filabridge)
 add_subdirectory(${LIBRARIES}/filaflat)
 add_subdirectory(${LIBRARIES}/filagui)
-add_subdirectory(${LIBRARIES}/filameshio)
 add_subdirectory(${LIBRARIES}/geometry)
 add_subdirectory(${LIBRARIES}/gltfio)
 add_subdirectory(${LIBRARIES}/ibl)
@@ -660,7 +622,6 @@ add_subdirectory(${LIBRARIES}/math)
 add_subdirectory(${LIBRARIES}/mathio)
 add_subdirectory(${LIBRARIES}/uberz)
 add_subdirectory(${LIBRARIES}/utils)
-add_subdirectory(${LIBRARIES}/viewer)
 add_subdirectory(${FILAMENT}/filament)
 add_subdirectory(${FILAMENT}/shaders)
 add_subdirectory(${EXTERNAL}/basisu/tnt)
@@ -672,9 +633,7 @@ add_subdirectory(${EXTERNAL}/smol-v/tnt)
 add_subdirectory(${EXTERNAL}/benchmark/tnt)
 add_subdirectory(${EXTERNAL}/meshoptimizer/tnt)
 add_subdirectory(${EXTERNAL}/cgltf/tnt)
-add_subdirectory(${EXTERNAL}/draco/tnt)
 add_subdirectory(${EXTERNAL}/jsmn/tnt)
-add_subdirectory(${EXTERNAL}/stb/tnt)
 add_subdirectory(${EXTERNAL}/getopt)
 
 if (FILAMENT_BUILD_FILAMAT OR IS_HOST_PLATFORM)
@@ -684,11 +643,6 @@ if (FILAMENT_BUILD_FILAMAT OR IS_HOST_PLATFORM)
     add_subdirectory(${EXTERNAL}/glslang/tnt)
     add_subdirectory(${EXTERNAL}/spirv-cross/tnt)
     add_subdirectory(${LIBRARIES}/filamat)
-
-    # the material debugger requires filamat
-    if (FILAMENT_ENABLE_MATDBG OR IS_HOST_PLATFORM)
-        add_subdirectory(${LIBRARIES}/matdbg)
-    endif()
 endif()
 
 if (FILAMENT_SUPPORTS_VULKAN)
@@ -698,44 +652,21 @@ endif()
 
 set(FILAMENT_SAMPLES_BINARY_DIR ${PROJECT_BINARY_DIR}/samples)
 
-if (WEBGL)
-    add_subdirectory(web/filament-js)
-    add_subdirectory(web/samples)
-endif()
+message(STATUS "IS_HOST_PLATFORM: ${IS_HOST_PLATFORM}")
 
 if (IS_HOST_PLATFORM)
     if (FILAMENT_SUPPORTS_OPENGL)
         add_subdirectory(${LIBRARIES}/bluegl)
     endif()
-    if (NOT FILAMENT_SKIP_SDL2)
-      add_subdirectory(${LIBRARIES}/filamentapp)
-    endif()
     add_subdirectory(${LIBRARIES}/imageio)
 
-    add_subdirectory(${FILAMENT}/samples)
-
-    add_subdirectory(${EXTERNAL}/libassimp/tnt)
-    add_subdirectory(${EXTERNAL}/libpng/tnt)
-    add_subdirectory(${EXTERNAL}/libsdl2/tnt)
-    add_subdirectory(${EXTERNAL}/libz/tnt)
     add_subdirectory(${EXTERNAL}/tinyexr/tnt)
 
     add_subdirectory(${TOOLS}/cmgen)
-    add_subdirectory(${TOOLS}/cso-lut)
-    add_subdirectory(${TOOLS}/filamesh)
     add_subdirectory(${TOOLS}/glslminifier)
     add_subdirectory(${TOOLS}/matc)
-    add_subdirectory(${TOOLS}/matinfo)
-    add_subdirectory(${TOOLS}/mipgen)
-    add_subdirectory(${TOOLS}/normal-blending)
     add_subdirectory(${TOOLS}/resgen)
-    add_subdirectory(${TOOLS}/rgb-to-lmsr)
-    add_subdirectory(${TOOLS}/roughness-prefilter)
-    add_subdirectory(${TOOLS}/specular-color)
     add_subdirectory(${TOOLS}/uberz)
 endif()
 
-# Generate exported executables for cross-compiled builds (Android, WebGL, and iOS)
-if (NOT CMAKE_CROSSCOMPILING)
-    export(TARGETS matc cmgen filamesh mipgen resgen uberz glslminifier FILE ${IMPORT_EXECUTABLES})
-endif()
+install(EXPORT filamentTargets DESTINATION share/filament)

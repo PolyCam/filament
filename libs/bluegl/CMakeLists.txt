@@ -41,26 +41,14 @@ include_directories(${PUBLIC_HDR_DIR})
 add_library(${TARGET} STATIC ${PUBLIC_HDRS} ${SRCS})
 
 # specify where the public headers of this library are
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 if (WIN32)
     target_link_libraries(${TARGET} PRIVATE opengl32 gdi32)
 endif()
 
-install(TARGETS ${TARGET} ARCHIVE DESTINATION lib/${DIST_DIR})
-
-# Build the tests...
-add_executable(test_${TARGET}
-    tests/OpenGLSupport.cpp
-    tests/OpenGLSupport.hpp
-    tests/test_bluegl.cpp)
-
-if (LINUX)
-    target_link_libraries(test_${TARGET} PUBLIC dl)
-endif()
-
-# and we're linking against the libraries below, importing their public headers
-target_link_libraries(test_${TARGET} LINK_PUBLIC ${TARGET})
-target_link_libraries(test_${TARGET} LINK_PUBLIC gtest)
-set_target_properties(test_${TARGET} PROPERTIES FOLDER Tests)
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)

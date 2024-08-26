@@ -8,6 +8,7 @@ set(TARGET              imgui)
 set(SRC_DIR             ${OUR_DIR})
 set(PUBLIC_HDR_DIR      ${OUR_DIR})
 set(PRIVATE_HDR_DIR     ${OUR_DIR})
+set(BACKENDS_DIR        ${OUR_DIR}/backends)
 
 set(PUBLIC_HDRS
     ${PUBLIC_HDR_DIR}/imconfig.h
@@ -29,8 +30,25 @@ set(SRCS
     ${SRC_DIR}/imgui_widgets.cpp
 )
 
+set(BACKENDS
+    ${BACKENDS_DIR}/imgui_impl_metal.h
+    ${BACKENDS_DIR}/imgui_impl_metal.mm
+    ${BACKENDS_DIR}/imgui_impl_sdl.h
+    ${BACKENDS_DIR}/imgui_impl_sdl.cpp
+)
+
 add_library(${TARGET} STATIC ${PRIVATE_HDRS} ${PUBLIC_HDRS} ${SRCS})
 
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR} ${PRIVATE_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 
 set_target_properties(${TARGET} PROPERTIES FOLDER ThirdParty)
+
+# ==================================================================================================
+# Installation
+# ==================================================================================================
+install(TARGETS ${TARGET} EXPORT filamentTargets ARCHIVE DESTINATION lib)
+install(FILES ${PUBLIC_HDRS} DESTINATION include)
+install(FILES ${BACKENDS} DESTINATION include/imgui/backends)

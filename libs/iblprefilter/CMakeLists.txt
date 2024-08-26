@@ -42,10 +42,6 @@ add_definitions(-DSYSTRACE_TAG=2 )
 # Generate all .filamat: default material, skyboxes, and post-process
 # ==================================================================================================
 
-if (CMAKE_CROSSCOMPILING)
-    include(${IMPORT_EXECUTABLES})
-endif()
-
 set(MATERIAL_BINS)
 file(MAKE_DIRECTORY ${MATERIAL_DIR})
 
@@ -87,7 +83,10 @@ include_directories(src)
 add_library(${TARGET} STATIC ${PRIVATE_HDRS} ${PUBLIC_HDRS} ${SRCS})
 
 # specify where the public headers of this library are
-target_include_directories(${TARGET} PUBLIC ${PUBLIC_HDR_DIR})
+target_include_directories(${TARGET} PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${PUBLIC_HDR_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
 set_target_properties(${TARGET} PROPERTIES FOLDER Libs)
 
 # ==================================================================================================
@@ -133,5 +132,5 @@ target_link_libraries(${TARGET} PRIVATE
 # Installation
 # ==================================================================================================
 set(INSTALL_TYPE ARCHIVE)
-install(TARGETS ${TARGET} ${INSTALL_TYPE} DESTINATION lib/${DIST_DIR})
+install(TARGETS ${TARGET} EXPORT filamentTargets ${INSTALL_TYPE} DESTINATION lib)
 install(DIRECTORY ${PUBLIC_HDR_DIR}/filament-iblprefilter DESTINATION include)
